@@ -560,8 +560,7 @@ const Sentinel = () => {
                             </Button>
                             <Button 
                               onClick={downloadProblematicPDF} 
-                              variant="outline"
-                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+                              className="bg-red-600 hover:bg-red-700 text-white"
                               disabled={!reportData.some(check => check.has_problem)}
                             >
                               <AlertTriangle className="w-4 h-4 mr-2" />
@@ -569,8 +568,7 @@ const Sentinel = () => {
                             </Button>
                             <Button 
                               onClick={() => setShowClearConfirm(true)}
-                              variant="outline"
-                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600 ml-auto"
+                              className="bg-red-600 hover:bg-red-700 text-white ml-auto"
                               disabled={dailyChecks.length === 0}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
