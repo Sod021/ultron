@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -28,6 +28,7 @@ interface DailyCheck {
   website_url: string;
   is_live: boolean;
   is_functional: boolean;
+  has_problem: boolean;
   notes: string;
   created_at: string;
 }
@@ -37,6 +38,7 @@ const Sentinel = () => {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [dailyChecks, setDailyChecks] = useState<DailyCheck[]>([]);
   const [isChecking, setIsChecking] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
   const [checkComplete, setCheckComplete] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -47,6 +49,7 @@ const Sentinel = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isLive, setIsLive] = useState<string>("yes");
   const [isFunctional, setIsFunctional] = useState<string>("yes");
+  const [hasProblem, setHasProblem] = useState<string>("no");
   const [notes, setNotes] = useState("");
   const [reportDate, setReportDate] = useState<Date>();
   const [reportData, setReportData] = useState<DailyCheck[]>([]);
@@ -176,6 +179,15 @@ const Sentinel = () => {
     setWebsiteUrl("");
   };
 
+  const stopDailyChecks = () => {
+    setIsStopping(true);
+    setIsChecking(false);
+    setCheckComplete(false);
+    setCurrentCheckIndex(0);
+    setIsStopping(false);
+    toast({ title: "Stopped", description: "Website checks have been stopped" });
+  };
+
   const startDailyCheck = () => {
     if (websites.length === 0) {
       toast({ title: "Error", description: "Please add websites first", variant: "destructive" });
@@ -187,6 +199,7 @@ const Sentinel = () => {
     setIsLive("yes");
     setIsFunctional("yes");
     setNotes("");
+    setIsStopping(false);
   };
 
   const handleNext = () => {
@@ -198,6 +211,7 @@ const Sentinel = () => {
       website_url: currentWebsite.url,
       is_live: isLive === "yes",
       is_functional: isFunctional === "yes",
+      has_problem: hasProblem === "yes",
       notes: notes,
       created_at: new Date().toISOString(),
     }]);
@@ -206,6 +220,7 @@ const Sentinel = () => {
       setCurrentCheckIndex(currentCheckIndex + 1);
       setIsLive("yes");
       setIsFunctional("yes");
+      setHasProblem("no");
       setNotes("");
     } else {
       setCheckComplete(true);
@@ -229,7 +244,25 @@ const Sentinel = () => {
       toast({ title: "Error", description: "No report data to download", variant: "destructive" });
       return;
     }
+    generateAndDownloadPDF(reportData, 'sentinel-report-');
+  };
 
+  const downloadProblematicPDF = () => {
+    const problematicChecks = reportData.filter(check => check.has_problem);
+    
+    if (problematicChecks.length === 0) {
+      toast({ 
+        title: "No Issues Found", 
+        description: "No websites were marked as having problems.", 
+        variant: "default" 
+      });
+      return;
+    }
+    
+    generateAndDownloadPDF(problematicChecks, 'problematic-websites-');
+  };
+
+  const generateAndDownloadPDF = (checks: DailyCheck[], filenamePrefix: string) => {
     try {
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -238,7 +271,10 @@ const Sentinel = () => {
 
       // Add title
       pdf.setFontSize(22);
-      pdf.text('Sentinel Report', margin, yPos);
+      const title = filenamePrefix.includes('problematic') 
+        ? 'Problematic Websites Report' 
+        : 'Sentinel Report';
+      pdf.text(title, margin, yPos);
       yPos += 10;
       
       // Add date
@@ -251,7 +287,7 @@ const Sentinel = () => {
       pdf.setFontSize(12);
       pdf.setTextColor(0, 0, 0);
       
-      reportData.forEach((check, index) => {
+      checks.forEach((check, index) => {
         // Add page if needed
         if (yPos > 250) {
           pdf.addPage();
@@ -269,7 +305,6 @@ const Sentinel = () => {
         const urlText = check.website_url;
         const urlWidth = pdf.getTextWidth(urlText);
         pdf.text(urlText, margin + 5, yPos);
-        // Add clickable link annotation
         pdf.link(margin + 5, yPos - 3, urlWidth, 5, { url: check.website_url });
         pdf.setTextColor(0, 0, 0);
         yPos += 7;
@@ -280,6 +315,10 @@ const Sentinel = () => {
         
         // Functionality with plain text indicators
         pdf.text(`Functional: ${check.is_functional ? 'Yes' : 'No'}`, margin + 5, yPos);
+        yPos += 7;
+
+        // Problem status
+        pdf.text(`Problem: ${check.has_problem ? 'Yes' : 'No'}`, margin + 5, yPos);
         yPos += 7;
 
         // Notes
@@ -294,11 +333,20 @@ const Sentinel = () => {
       });
 
       // Save the PDF
-      pdf.save(`sentinel-report-${format(reportDate || new Date(), "yyyy-MM-dd")}.pdf`);
-      toast({ title: "Success", description: "Report downloaded successfully" });
+      const filename = `${filenamePrefix}${format(reportDate || new Date(), "yyyy-MM-dd")}.pdf`;
+      pdf.save(filename);
+      
+      toast({ 
+        title: "Success", 
+        description: `Report downloaded with ${checks.length} ${filenamePrefix.includes('problematic') ? 'problematic ' : ''}websites` 
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast({ title: "Error", description: "Failed to generate PDF", variant: "destructive" });
+      toast({ 
+        title: "Error", 
+        description: `Failed to generate ${filenamePrefix.includes('problematic') ? 'problematic websites ' : ''}PDF`, 
+        variant: "destructive" 
+      });
     }
   };
 
@@ -438,9 +486,24 @@ const Sentinel = () => {
                       <div><Label>Select Date</Label>
                         <Popover><PopoverTrigger asChild><Button variant="outline" className="w-full justify-start text-left font-normal"><CalendarIcon className="mr-2 h-4 w-4" />{reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={reportDate} onSelect={setReportDate} initialFocus /></PopoverContent></Popover>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <Button onClick={generateReport}>Generate Report</Button>
-                        {reportData.length > 0 && <Button onClick={downloadPDF} variant="secondary"><Download className="w-4 h-4 mr-2" />Download PDF</Button>}
+                        {reportData.length > 0 && (
+                          <>
+                            <Button onClick={downloadPDF} variant="secondary">
+                              <Download className="w-4 h-4 mr-2" />Full Report
+                            </Button>
+                            <Button 
+                              onClick={downloadProblematicPDF} 
+                              variant="outline"
+                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+                              disabled={!reportData.some(check => check.has_problem)}
+                            >
+                              <AlertTriangle className="w-4 h-4 mr-2" />
+                              Problematic Only
+                            </Button>
+                          </>
+                        )}
                       </div>
                       {reportData.length > 0 && (
                         <div ref={reportRef} className="mt-6 space-y-4 p-6 bg-card rounded-lg">
@@ -448,9 +511,28 @@ const Sentinel = () => {
                           {reportData.map((check) => (
                             <Card key={check.id}><CardContent className="pt-6"><div className="space-y-3">
                               <h4 className="font-semibold text-lg">{check.website_name}</h4>
-                              <div className="flex gap-4">
-                                <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Live:</span>{check.is_live ? <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>}</div>
-                                <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Functional:</span>{check.is_functional ? <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>}</div>
+                              <div className="flex flex-wrap gap-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Live:</span>
+                                  {check.is_live ? 
+                                    <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : 
+                                    <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>
+                                  }
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Functional:</span>
+                                  {check.is_functional ? 
+                                    <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : 
+                                    <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>
+                                  }
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Problem:</span>
+                                  {check.has_problem ? 
+                                    <Badge variant="destructive"><AlertTriangle className="w-3 h-3 mr-1" />Yes</Badge> : 
+                                    <Badge className="bg-gray-200 text-gray-800"><CheckCircle2 className="w-3 h-3 mr-1" />No</Badge>
+                                  }
+                                </div>
                               </div>
                               {check.notes && <div><span className="text-sm text-muted-foreground">Notes:</span><p className="text-sm mt-1">{check.notes}</p></div>}
                             </div></CardContent></Card>
@@ -472,11 +554,45 @@ const Sentinel = () => {
                   <a href={websites[currentCheckIndex].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-2">{websites[currentCheckIndex].url}<ExternalLink className="w-4 h-4" /></a>
                   <div><Label className="mb-3 block">Is it live?</Label><RadioGroup value={isLive} onValueChange={setIsLive}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="live-yes" /><Label htmlFor="live-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="live-no" /><Label htmlFor="live-no">No</Label></div></RadioGroup></div>
                   <div><Label className="mb-3 block">Is it functional?</Label><RadioGroup value={isFunctional} onValueChange={setIsFunctional}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="functional-yes" /><Label htmlFor="functional-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="functional-no" /><Label htmlFor="functional-no">No</Label></div></RadioGroup></div>
+                  <div><Label className="mb-3 block">Is there a Problem?</Label><RadioGroup value={hasProblem} onValueChange={setHasProblem}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="problem-yes" /><Label htmlFor="problem-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="problem-no" /><Label htmlFor="problem-no">No</Label></div></RadioGroup></div>
                   <div><Label htmlFor="notes">Notes / Memo</Label><Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any additional notes..." rows={4} /></div>
-                  <Button onClick={handleNext} size="lg" className="w-full">{currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}</Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={handleNext} 
+                      size="lg" 
+                      className="flex-1"
+                      disabled={isStopping}
+                    >
+                      {currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}
+                    </Button>
+                    <Button 
+                      onClick={stopDailyChecks} 
+                      variant="outline" 
+                      size="lg"
+                      className="flex-1"
+                      disabled={isStopping}
+                    >
+                      {isStopping ? 'Stopping...' : 'Stop'}
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <div className="text-center space-y-4"><CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" /><p className="text-muted-foreground">You have completed checks for all {websites.length} websites.</p><Button onClick={() => { setIsChecking(false); setCheckComplete(false); setCurrentCheckIndex(0); }} size="lg">Return to Dashboard</Button></div>
+                <div className="text-center space-y-4">
+                  <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" />
+                  <p className="text-muted-foreground">
+                    {isStopping ? 'Checks stopped' : `You have completed checks for all ${websites.length} websites.`}
+                  </p>
+                  <Button 
+                    onClick={() => { 
+                      setIsChecking(false); 
+                      setCheckComplete(false); 
+                      setCurrentCheckIndex(0); 
+                    }} 
+                    size="lg"
+                  >
+                    Return to Dashboard
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
