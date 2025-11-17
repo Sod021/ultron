@@ -1,0 +1,363 @@
+import { useState, useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+
+interface Website {
+  id: number;
+  name: string;
+  url: string;
+  created_at: string;
+}
+
+interface DailyCheck {
+  id: number;
+  website_id: number;
+  website_name: string;
+  website_url: string;
+  is_live: boolean;
+  is_functional: boolean;
+  notes: string;
+  created_at: string;
+}
+
+const Sentinel = () => {
+  const { toast } = useToast();
+  const [websites, setWebsites] = useState<Website[]>([]);
+  const [dailyChecks, setDailyChecks] = useState<DailyCheck[]>([]);
+  const [isChecking, setIsChecking] = useState(false);
+  const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
+  const [checkComplete, setCheckComplete] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const reportRef = useRef<HTMLDivElement>(null);
+  
+  const [websiteName, setWebsiteName] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [isLive, setIsLive] = useState<string>("yes");
+  const [isFunctional, setIsFunctional] = useState<string>("yes");
+  const [notes, setNotes] = useState("");
+  const [reportDate, setReportDate] = useState<Date>();
+  const [reportData, setReportData] = useState<DailyCheck[]>([]);
+
+  useEffect(() => {
+    const storedWebsites = localStorage.getItem("sentinel_websites");
+    const storedChecks = localStorage.getItem("sentinel_daily_checks");
+    if (storedWebsites) setWebsites(JSON.parse(storedWebsites));
+    if (storedChecks) setDailyChecks(JSON.parse(storedChecks));
+  }, []);
+
+  const saveWebsites = (data: Website[]) => {
+    localStorage.setItem("sentinel_websites", JSON.stringify(data));
+    setWebsites(data);
+  };
+
+  const saveDailyChecks = (data: DailyCheck[]) => {
+    localStorage.setItem("sentinel_daily_checks", JSON.stringify(data));
+    setDailyChecks(data);
+  };
+
+  const addWebsite = () => {
+    if (!websiteName || !websiteUrl) {
+      toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" });
+      return;
+    }
+    if (editingId) {
+      saveWebsites(websites.map(w => w.id === editingId ? { ...w, name: websiteName, url: websiteUrl } : w));
+      toast({ title: "Success", description: "Website updated successfully" });
+      setEditingId(null);
+    } else {
+      saveWebsites([...websites, { id: Date.now(), name: websiteName, url: websiteUrl, created_at: new Date().toISOString() }]);
+      toast({ title: "Success", description: "Website added successfully" });
+    }
+    setWebsiteName("");
+    setWebsiteUrl("");
+  };
+
+  const startDailyCheck = () => {
+    if (websites.length === 0) {
+      toast({ title: "Error", description: "Please add websites first", variant: "destructive" });
+      return;
+    }
+    setIsChecking(true);
+    setCurrentCheckIndex(0);
+    setCheckComplete(false);
+    setIsLive("yes");
+    setIsFunctional("yes");
+    setNotes("");
+  };
+
+  const handleNext = () => {
+    const currentWebsite = websites[currentCheckIndex];
+    saveDailyChecks([...dailyChecks, {
+      id: Date.now(),
+      website_id: currentWebsite.id,
+      website_name: currentWebsite.name,
+      website_url: currentWebsite.url,
+      is_live: isLive === "yes",
+      is_functional: isFunctional === "yes",
+      notes: notes,
+      created_at: new Date().toISOString(),
+    }]);
+    
+    if (currentCheckIndex < websites.length - 1) {
+      setCurrentCheckIndex(currentCheckIndex + 1);
+      setIsLive("yes");
+      setIsFunctional("yes");
+      setNotes("");
+    } else {
+      setCheckComplete(true);
+      toast({ title: "Complete", description: "All checks completed successfully" });
+    }
+  };
+
+  const generateReport = () => {
+    if (!reportDate) {
+      toast({ title: "Error", description: "Please select a date", variant: "destructive" });
+      return;
+    }
+    const selectedDate = format(reportDate, "yyyy-MM-dd");
+    const filtered = dailyChecks.filter(check => format(new Date(check.created_at), "yyyy-MM-dd") === selectedDate);
+    setReportData(filtered);
+    if (filtered.length === 0) toast({ title: "No Data", description: "No check data found for this date" });
+  };
+
+  const downloadPDF = () => {
+    if (reportData.length === 0) {
+      toast({ title: "Error", description: "No report data to download", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPos = 20;
+
+      // Add title
+      pdf.setFontSize(22);
+      pdf.text('Sentinel Report', margin, yPos);
+      yPos += 10;
+      
+      // Add date
+      pdf.setFontSize(12);
+      pdf.setTextColor(100);
+      pdf.text(`Report Date: ${reportDate ? format(reportDate, "PPPP") : 'N/A'}`, margin, yPos);
+      yPos += 15;
+
+      // Add report data
+      pdf.setFontSize(12);
+      pdf.setTextColor(0, 0, 0);
+      
+      reportData.forEach((check, index) => {
+        // Add page if needed
+        if (yPos > 250) {
+          pdf.addPage();
+          yPos = 20;
+        }
+
+        // Website name
+        pdf.setFont(undefined, 'bold');
+        pdf.text(`${index + 1}. ${check.website_name}`, margin, yPos);
+        yPos += 7;
+
+        // Website URL - Add as clickable link
+        pdf.setFont(undefined, 'normal');
+        pdf.setTextColor(0, 0, 255);
+        const urlText = check.website_url;
+        const urlWidth = pdf.getTextWidth(urlText);
+        pdf.text(urlText, margin + 5, yPos);
+        // Add clickable link annotation
+        pdf.link(margin + 5, yPos - 3, urlWidth, 5, { url: check.website_url });
+        pdf.setTextColor(0, 0, 0);
+        yPos += 7;
+
+        // Status with plain text indicators
+        pdf.text(`Status: ${check.is_live ? 'Live' : 'Not Live'}`, margin + 5, yPos);
+        yPos += 7;
+        
+        // Functionality with plain text indicators
+        pdf.text(`Functional: ${check.is_functional ? 'Yes' : 'No'}`, margin + 5, yPos);
+        yPos += 7;
+
+        // Notes
+        if (check.notes) {
+          const splitNotes = pdf.splitTextToSize(`Notes: ${check.notes}`, pageWidth - (margin * 2) - 5);
+          pdf.text(splitNotes, margin + 5, yPos);
+          yPos += splitNotes.length * 7;
+        }
+
+        // Add space between entries
+        yPos += 10;
+      });
+
+      // Save the PDF
+      pdf.save(`sentinel-report-${format(reportDate || new Date(), "yyyy-MM-dd")}.pdf`);
+      toast({ title: "Success", description: "Report downloaded successfully" });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({ title: "Error", description: "Failed to generate PDF", variant: "destructive" });
+    }
+  };
+
+  const sidebarItems = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "websites", label: "Websites", icon: Globe },
+    { id: "reports", label: "Reports", icon: FileText },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background flex">
+      <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col">
+        <div className="p-6 border-b border-sidebar-border">
+          <h1 className="text-2xl font-bold text-sidebar-foreground">Sentinel</h1>
+          <p className="text-sm text-sidebar-foreground/70 mt-1">Website Monitor</p>
+        </div>
+        <nav className="flex-1 p-4">
+          <ul className="space-y-2">
+            {sidebarItems.map((item) => (
+              <li key={item.id}>
+                <button
+                  onClick={() => !isChecking && setActiveTab(item.id)}
+                  disabled={isChecking}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                    activeTab === item.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
+                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </aside>
+
+      <main className="flex-1 p-8 overflow-auto">
+        {!isChecking ? (
+          <>
+            {activeTab === "dashboard" && (
+              <div>
+                <h2 className="text-3xl font-bold text-foreground mb-6">Dashboard</h2>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily Checks</CardTitle>
+                    <CardDescription>Start manual website monitoring checks</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground mb-4">Total websites: <span className="font-semibold text-foreground">{websites.length}</span></p>
+                    <Button onClick={startDailyCheck} size="lg">Start Daily Checks</Button>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "websites" && (
+              <div>
+                <h2 className="text-3xl font-bold text-foreground mb-6">Websites</h2>
+                <Card className="mb-6">
+                  <CardHeader><CardTitle>{editingId ? "Edit Website" : "Add Website"}</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4">
+                      <div><Label htmlFor="name">Website Name</Label><Input id="name" value={websiteName} onChange={(e) => setWebsiteName(e.target.value)} placeholder="My Website" /></div>
+                      <div><Label htmlFor="url">URL</Label><Input id="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://example.com" /></div>
+                      <div className="flex gap-2">
+                        <Button onClick={addWebsite}><Plus className="w-4 h-4 mr-2" />{editingId ? "Update" : "Add"} Website</Button>
+                        {editingId && <Button variant="outline" onClick={() => { setEditingId(null); setWebsiteName(""); setWebsiteUrl(""); }}>Cancel</Button>}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle>Your Websites</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {websites.map((website) => (
+                        <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-foreground">{website.name}</h3>
+                            <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">{website.url}<ExternalLink className="w-3 h-3" /></a>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => { setWebsiteName(website.name); setWebsiteUrl(website.url); setEditingId(website.id); }}><Edit className="w-4 h-4" /></Button>
+                            <Button variant="destructive" size="sm" onClick={() => { saveWebsites(websites.filter(w => w.id !== website.id)); toast({ title: "Success", description: "Website deleted" }); }}><Trash2 className="w-4 h-4" /></Button>
+                          </div>
+                        </div>
+                      ))}
+                      {websites.length === 0 && <p className="text-center text-muted-foreground py-8">No websites added yet</p>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "reports" && (
+              <div>
+                <h2 className="text-3xl font-bold text-foreground mb-6">Reports</h2>
+                <Card>
+                  <CardHeader><CardTitle>Generate Report</CardTitle><CardDescription>View check results for a specific date</CardDescription></CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div><Label>Select Date</Label>
+                        <Popover><PopoverTrigger asChild><Button variant="outline" className="w-full justify-start text-left font-normal"><CalendarIcon className="mr-2 h-4 w-4" />{reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={reportDate} onSelect={setReportDate} initialFocus /></PopoverContent></Popover>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button onClick={generateReport}>Generate Report</Button>
+                        {reportData.length > 0 && <Button onClick={downloadPDF} variant="secondary"><Download className="w-4 h-4 mr-2" />Download PDF</Button>}
+                      </div>
+                      {reportData.length > 0 && (
+                        <div ref={reportRef} className="mt-6 space-y-4 p-6 bg-card rounded-lg">
+                          <div className="mb-6"><h3 className="text-2xl font-bold text-foreground">Sentinel Report</h3><p className="text-muted-foreground">{reportDate && format(reportDate, "PPPP")}</p></div>
+                          {reportData.map((check) => (
+                            <Card key={check.id}><CardContent className="pt-6"><div className="space-y-3">
+                              <h4 className="font-semibold text-lg">{check.website_name}</h4>
+                              <div className="flex gap-4">
+                                <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Live:</span>{check.is_live ? <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>}</div>
+                                <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Functional:</span>{check.is_functional ? <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>}</div>
+                              </div>
+                              {check.notes && <div><span className="text-sm text-muted-foreground">Notes:</span><p className="text-sm mt-1">{check.notes}</p></div>}
+                            </div></CardContent></Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </>
+        ) : (
+          <Card>
+            <CardHeader>{!checkComplete ? <><CardTitle>Website {currentCheckIndex + 1} of {websites.length}</CardTitle><CardDescription>{websites[currentCheckIndex].name}</CardDescription></> : <><CardTitle>Checks Complete!</CardTitle><CardDescription>All website checks completed</CardDescription></>}</CardHeader>
+            <CardContent>
+              {!checkComplete ? (
+                <div className="space-y-6">
+                  <a href={websites[currentCheckIndex].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-2">{websites[currentCheckIndex].url}<ExternalLink className="w-4 h-4" /></a>
+                  <div><Label className="mb-3 block">Is it live?</Label><RadioGroup value={isLive} onValueChange={setIsLive}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="live-yes" /><Label htmlFor="live-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="live-no" /><Label htmlFor="live-no">No</Label></div></RadioGroup></div>
+                  <div><Label className="mb-3 block">Is it functional?</Label><RadioGroup value={isFunctional} onValueChange={setIsFunctional}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="functional-yes" /><Label htmlFor="functional-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="functional-no" /><Label htmlFor="functional-no">No</Label></div></RadioGroup></div>
+                  <div><Label htmlFor="notes">Notes / Memo</Label><Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any additional notes..." rows={4} /></div>
+                  <Button onClick={handleNext} size="lg" className="w-full">{currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}</Button>
+                </div>
+              ) : (
+                <div className="text-center space-y-4"><CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" /><p className="text-muted-foreground">You have completed checks for all {websites.length} websites.</p><Button onClick={() => { setIsChecking(false); setCheckComplete(false); setCurrentCheckIndex(0); }} size="lg">Return to Dashboard</Button></div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default Sentinel;
