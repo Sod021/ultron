@@ -707,7 +707,7 @@ const Sentinel = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={clearAllReports}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-red-600 hover:bg-red-700 text-white"
             >
               Clear All Reports
             </AlertDialogAction>
