@@ -66,6 +66,7 @@ const Sentinel = () => {
   const [isCustomNote, setIsCustomNote] = useState(false);
   const [reportDate, setReportDate] = useState<Date>();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
 
   // Common issues list
   const commonIssues = [
@@ -297,6 +298,16 @@ const Sentinel = () => {
     generateAndDownloadPDF(problematicChecks, 'problematic-websites-');
   };
 
+  const clearAllWebsites = () => {
+    setWebsites([]);
+    localStorage.removeItem("sentinel_websites");
+    setIsClearWebsitesDialogOpen(false);
+    toast({
+      title: "Success",
+      description: "All websites have been cleared.",
+    });
+  };
+
   const clearAllReports = () => {
     setDailyChecks([]);
     setReportData([]);
@@ -497,7 +508,18 @@ const Sentinel = () => {
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader><CardTitle>Your Websites</CardTitle></CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle>Your Websites</CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsClearWebsitesDialogOpen(true)}
+                      className="text-white hover:bg-red-600 hover:text-white border-red-200"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Clear All
+                    </Button>
+                  </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       {websites.map((website) => (
@@ -710,6 +732,29 @@ const Sentinel = () => {
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               Clear All Reports
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isClearWebsitesDialogOpen} onOpenChange={setIsClearWebsitesDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              <AlertDialogTitle>Clear All Websites</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="pt-2">
+              Are you sure you want to clear all websites? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={clearAllWebsites}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Clear All Websites
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
