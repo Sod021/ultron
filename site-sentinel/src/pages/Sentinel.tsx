@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -51,7 +52,20 @@ const Sentinel = () => {
   const [isFunctional, setIsFunctional] = useState<string>("yes");
   const [hasProblem, setHasProblem] = useState<string>("no");
   const [notes, setNotes] = useState("");
+  const [selectedIssue, setSelectedIssue] = useState<string>("");
+  const [isCustomNote, setIsCustomNote] = useState(false);
   const [reportDate, setReportDate] = useState<Date>();
+
+  // Common issues list
+  const commonIssues = [
+    "Contact Form Not Working",
+    "404 Page",
+    "Header/Footer Distorted",
+    "Redirecting to Betting Site",
+    "Domain Expired",
+    "403 Page",
+    "Other (Specify Below)"
+  ];
   const [reportData, setReportData] = useState<DailyCheck[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -198,12 +212,19 @@ const Sentinel = () => {
     setCheckComplete(false);
     setIsLive("yes");
     setIsFunctional("yes");
+    setHasProblem("no");
     setNotes("");
+    setSelectedIssue("");
+    setIsCustomNote(false);
     setIsStopping(false);
   };
 
   const handleNext = () => {
     const currentWebsite = websites[currentCheckIndex];
+    const finalNotes = selectedIssue === "Other (Specify Below)" 
+      ? notes 
+      : selectedIssue || notes;
+    
     saveDailyChecks([...dailyChecks, {
       id: Date.now(),
       website_id: currentWebsite.id,
@@ -212,7 +233,7 @@ const Sentinel = () => {
       is_live: isLive === "yes",
       is_functional: isFunctional === "yes",
       has_problem: hasProblem === "yes",
-      notes: notes,
+      notes: finalNotes,
       created_at: new Date().toISOString(),
     }]);
     
@@ -222,6 +243,8 @@ const Sentinel = () => {
       setIsFunctional("yes");
       setHasProblem("no");
       setNotes("");
+      setSelectedIssue("");
+      setIsCustomNote(false);
     } else {
       setCheckComplete(true);
       toast({ title: "Complete", description: "All checks completed successfully" });
@@ -555,7 +578,51 @@ const Sentinel = () => {
                   <div><Label className="mb-3 block">Is it live?</Label><RadioGroup value={isLive} onValueChange={setIsLive}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="live-yes" /><Label htmlFor="live-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="live-no" /><Label htmlFor="live-no">No</Label></div></RadioGroup></div>
                   <div><Label className="mb-3 block">Is it functional?</Label><RadioGroup value={isFunctional} onValueChange={setIsFunctional}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="functional-yes" /><Label htmlFor="functional-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="functional-no" /><Label htmlFor="functional-no">No</Label></div></RadioGroup></div>
                   <div><Label className="mb-3 block">Is there a Problem?</Label><RadioGroup value={hasProblem} onValueChange={setHasProblem}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="problem-yes" /><Label htmlFor="problem-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="problem-no" /><Label htmlFor="problem-no">No</Label></div></RadioGroup></div>
-                  <div><Label htmlFor="notes">Notes / Memo</Label><Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any additional notes..." rows={4} /></div>
+                  <div>
+                    <Label htmlFor="notes" className="mb-2 block">Notes / Memo</Label>
+                    <div className="mb-2">
+                      <Select 
+                        value={selectedIssue} 
+                        onValueChange={(value) => {
+                          setSelectedIssue(value);
+                          if (value === "Other (Specify Below)") {
+                            setIsCustomNote(true);
+                            setNotes("");
+                          } else if (value) {
+                            setIsCustomNote(false);
+                            setNotes(value);
+                          } else {
+                            setIsCustomNote(true);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a common issue or choose to type your own" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {commonIssues.map((issue) => (
+                            <SelectItem key={issue} value={issue}>
+                              {issue}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(isCustomNote || !selectedIssue) && (
+                      <Textarea
+                        id="notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder={
+                          selectedIssue === "Other (Specify Below)" 
+                            ? "Please specify the issue..." 
+                            : "Any additional notes..."
+                        }
+                        rows={3}
+                        className="mt-2"
+                      />
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Button 
                       onClick={handleNext} 
