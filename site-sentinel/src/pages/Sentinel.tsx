@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +50,97 @@ const Sentinel = () => {
   const [notes, setNotes] = useState("");
   const [reportDate, setReportDate] = useState<Date>();
   const [reportData, setReportData] = useState<DailyCheck[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const handleCSVImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim() !== '');
+      
+      if (lines.length < 2) {
+        throw new Error('CSV file is empty or has no data rows');
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      if (!headers.includes('name') || !headers.includes('url')) {
+        throw new Error('CSV must include "name" and "url" columns');
+      }
+
+      const newWebsites: Website[] = [];
+      const existingUrls = new Set(websites.map(w => w.url.toLowerCase()));
+      const newUrls = new Set<string>();
+      const duplicateUrls = new Set<string>();
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const website: Partial<Website> = {};
+        
+        headers.forEach((header, index) => {
+          if (header === 'name') website.name = values[index] || `Website ${i}`;
+          if (header === 'url') {
+            let url = values[index];
+            if (!url.startsWith('http')) {
+              url = `https://${url}`;
+            }
+            website.url = url;
+          }
+        });
+
+        if (website.name && website.url) {
+          const url = website.url.toLowerCase();
+          if (existingUrls.has(url)) {
+            duplicateUrls.add(website.url);
+          } else if (!newUrls.has(url)) {
+            newWebsites.push({
+              id: Date.now() + i,
+              name: website.name,
+              url: website.url,
+              created_at: new Date().toISOString()
+            });
+            newUrls.add(url);
+          }
+        }
+      }
+
+      if (newWebsites.length > 0) {
+        const updatedWebsites = [...websites, ...newWebsites];
+        saveWebsites(updatedWebsites);
+        
+        let message = `Successfully imported ${newWebsites.length} website(s)`;
+        if (duplicateUrls.size > 0) {
+          message += ` (Skipped ${duplicateUrls.size} duplicate URL(s))`;
+        }
+        
+        toast({ 
+          title: 'Import Successful', 
+          description: message,
+          variant: 'default'
+        });
+      } else if (duplicateUrls.size > 0) {
+        toast({
+          title: 'No new websites imported',
+          description: `All ${duplicateUrls.size} URLs already exist in the system`,
+          variant: 'default'
+        });
+      }
+
+      // Reset the file input
+      event.target.value = '';
+      setImportError(null);
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      setImportError(error instanceof Error ? error.message : 'Failed to import CSV file');
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import CSV file',
+        variant: 'destructive'
+      });
+    }
+  };
 
   useEffect(() => {
     const storedWebsites = localStorage.getItem("sentinel_websites");
@@ -272,9 +363,44 @@ const Sentinel = () => {
                     <div className="grid gap-4">
                       <div><Label htmlFor="name">Website Name</Label><Input id="name" value={websiteName} onChange={(e) => setWebsiteName(e.target.value)} placeholder="My Website" /></div>
                       <div><Label htmlFor="url">URL</Label><Input id="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://example.com" /></div>
-                      <div className="flex gap-2">
-                        <Button onClick={addWebsite}><Plus className="w-4 h-4 mr-2" />{editingId ? "Update" : "Add"} Website</Button>
-                        {editingId && <Button variant="outline" onClick={() => { setEditingId(null); setWebsiteName(""); setWebsiteUrl(""); }}>Cancel</Button>}
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Button onClick={addWebsite}><Plus className="w-4 h-4 mr-2" />{editingId ? "Update" : "Add"} Website</Button>
+                            <div className="relative">
+                              <Button type="button" variant="outline" asChild>
+                                <Label htmlFor="csv-upload" className="cursor-pointer">
+                                  <Download className="w-4 h-4 mr-2" /> Import CSV
+                                </Label>
+                              </Button>
+                              <Input 
+                                id="csv-upload"
+                                type="file"
+                                accept=".csv"
+                                className="hidden"
+                                onChange={handleCSVImport}
+                              />
+                            </div>
+                            {editingId && (
+                              <Button 
+                                variant="outline" 
+                                onClick={() => { 
+                                  setEditingId(null); 
+                                  setWebsiteName(""); 
+                                  setWebsiteUrl(""); 
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        {importError && (
+                          <p className="text-sm text-destructive">{importError}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          CSV format: <code className="bg-muted px-1 rounded">name,url</code>
+                        </p>
                       </div>
                     </div>
                   </CardContent>
