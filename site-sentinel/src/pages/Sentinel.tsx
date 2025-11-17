@@ -217,6 +217,7 @@ const Sentinel = () => {
     setSelectedIssue("");
     setIsCustomNote(false);
     setIsStopping(false);
+    setReportData([]);
   };
 
   const handleNext = () => {
@@ -283,6 +284,13 @@ const Sentinel = () => {
     }
     
     generateAndDownloadPDF(problematicChecks, 'problematic-websites-');
+  };
+
+  const clearAllReports = () => {
+    setDailyChecks([]);
+    setReportData([]);
+    localStorage.removeItem("sentinel_daily_checks");
+    toast({ title: "Success", description: "All reports have been cleared" });
   };
 
   const generateAndDownloadPDF = (checks: DailyCheck[], filenamePrefix: string) => {
@@ -524,6 +532,15 @@ const Sentinel = () => {
                             >
                               <AlertTriangle className="w-4 h-4 mr-2" />
                               Problematic Only
+                            </Button>
+                            <Button 
+                              onClick={clearAllReports}
+                              variant="outline"
+                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+                              disabled={dailyChecks.length === 0}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Clear All Reports
                             </Button>
                           </>
                         )}
