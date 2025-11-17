@@ -14,6 +14,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Website {
   id: number;
@@ -55,6 +65,7 @@ const Sentinel = () => {
   const [selectedIssue, setSelectedIssue] = useState<string>("");
   const [isCustomNote, setIsCustomNote] = useState(false);
   const [reportDate, setReportDate] = useState<Date>();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Common issues list
   const commonIssues = [
@@ -290,6 +301,7 @@ const Sentinel = () => {
     setDailyChecks([]);
     setReportData([]);
     localStorage.removeItem("sentinel_daily_checks");
+    setShowClearConfirm(false);
     toast({ title: "Success", description: "All reports have been cleared" });
   };
 
@@ -522,7 +534,7 @@ const Sentinel = () => {
                         {reportData.length > 0 && (
                           <>
                             <Button onClick={downloadPDF} variant="secondary">
-                              <Download className="w-4 h-4 mr-2" />Full Report
+                              <Download className="w-4 h-4 mr-2" />Download Full Report
                             </Button>
                             <Button 
                               onClick={downloadProblematicPDF} 
@@ -531,12 +543,12 @@ const Sentinel = () => {
                               disabled={!reportData.some(check => check.has_problem)}
                             >
                               <AlertTriangle className="w-4 h-4 mr-2" />
-                              Problematic Only
+                              Download Problematic Only
                             </Button>
                             <Button 
-                              onClick={clearAllReports}
+                              onClick={() => setShowClearConfirm(true)}
                               variant="outline"
-                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+                              className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600 ml-auto"
                               disabled={dailyChecks.length === 0}
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
@@ -682,6 +694,26 @@ const Sentinel = () => {
           </Card>
         )}
       </main>
+
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all report data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={clearAllReports}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Clear All Reports
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
