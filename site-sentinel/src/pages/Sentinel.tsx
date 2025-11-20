@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
@@ -67,6 +67,28 @@ const Sentinel = () => {
   const [reportDate, setReportDate] = useState<Date>();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState({
+    checks: false,
+    pdf: false,
+    websites: false,
+    dashboard: true // Initial load
+  });
+  
+  // Simulate trend data (in a real app, this would come from your backend)
+  const [trendData, setTrendData] = useState({
+    total: { change: 2, isPositive: true },
+    live: { change: 1, isPositive: true },
+    functional: { change: 1, isPositive: false },
+    problematic: { change: 2, isPositive: false }
+  });
+  
+  // Simulate loading data
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(prev => ({ ...prev, dashboard: false }));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Common issues list
   const commonIssues = [
@@ -447,30 +469,82 @@ const Sentinel = () => {
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span className="h-2 w-2 rounded-full bg-green-500"></span>
                     <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6"
+                      onClick={() => {
+                        setIsLoading(prev => ({ ...prev, dashboard: true }));
+                        setTimeout(() => {
+                          setIsLoading(prev => ({ ...prev, dashboard: false }));
+                        }, 800);
+                      }}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${isLoading.dashboard ? 'animate-spin' : ''}`} />
+                    </Button>
                   </div>
                 </div>
 
                 {/* Stats Grid */}
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   {/* Total Websites */}
-                  <Card className="border-l-4 border-l-blue-500">
+                  <Card 
+                    className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => setActiveTab("websites")}
+                  >
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-                        <span>Total Websites</span>
+                        <div className="flex items-center gap-2 group">
+                          <span>Total Websites</span>
+                          <div className="relative group">
+                            <Info className="h-3.5 w-3.5 text-muted-foreground/70" />
+                            <div className="absolute hidden group-hover:block z-10 w-48 p-2 -ml-4 mt-1 text-xs bg-popover text-popover-foreground rounded-md shadow-lg border">
+                              Total number of websites being monitored in the system
+                            </div>
+                          </div>
+                        </div>
                         <Globe className="h-4 w-4 text-blue-500" />
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{websites.length}</div>
-                      <p className="text-xs text-muted-foreground">Tracked in system</p>
+                      {isLoading.dashboard ? (
+                        <div className="space-y-2">
+                          <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
+                          <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-2xl font-bold flex items-center gap-2">
+                            {websites.length}
+                            {trendData.total.change > 0 && (
+                              <span className={`text-xs flex items-center ${trendData.total.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                                {trendData.total.isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                {trendData.total.change}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">Tracked in system</p>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
 
                   {/* Live Status */}
-                  <Card className="border-l-4 border-l-green-500">
+                  <Card 
+                    className="border-l-4 border-l-green-500 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => setActiveTab("reports")}
+                  >
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-                        <span>Live Status</span>
+                        <div className="flex items-center gap-2 group">
+                          <span>Live Status</span>
+                          <div className="relative group">
+                            <Info className="h-3.5 w-3.5 text-muted-foreground/70" />
+                            <div className="absolute hidden group-hover:block z-10 w-48 p-2 -ml-4 mt-1 text-xs bg-popover text-popover-foreground rounded-md shadow-lg border">
+                              Live websites vs. websites that are currently down
+                            </div>
+                          </div>
+                        </div>
                         <div className="flex items-center gap-1">
                           <span className="h-2 w-2 rounded-full bg-green-500"></span>
                           <span className="h-2 w-2 rounded-full bg-red-500"></span>
@@ -478,24 +552,52 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold text-green-600">
-                          {dailyChecks.filter(c => c.is_live).length}
-                        </span>
-                        <span className="text-muted-foreground">/</span>
-                        <span className="text-lg text-muted-foreground">
-                          {dailyChecks.filter(c => !c.is_live).length}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Live / Down</p>
+                      {isLoading.dashboard ? (
+                        <div className="space-y-2">
+                          <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
+                          <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-bold text-green-600">
+                                {dailyChecks.filter(c => c.is_live).length}
+                              </span>
+                              {trendData.live.change > 0 && (
+                                <span className={`text-xs flex items-center ${trendData.live.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                                  {trendData.live.isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                  {trendData.live.change}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-lg text-muted-foreground">
+                              {dailyChecks.filter(c => !c.is_live).length}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Live / Down</p>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
 
                   {/* Functional Status */}
-                  <Card className="border-l-4 border-l-amber-500">
+                  <Card 
+                    className="border-l-4 border-l-amber-500 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => setActiveTab("reports")}
+                  >
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-                        <span>Functional Status</span>
+                        <div className="flex items-center gap-2 group">
+                          <span>Functional Status</span>
+                          <div className="relative group">
+                            <Info className="h-3.5 w-3.5 text-muted-foreground/70" />
+                            <div className="absolute hidden group-hover:block z-10 w-48 p-2 -ml-4 mt-1 text-xs bg-popover text-popover-foreground rounded-md shadow-lg border">
+                              Websites functioning normally vs. those with functional issues
+                            </div>
+                          </div>
+                        </div>
                         <div className="flex items-center gap-1">
                           <CheckCircle2 className="h-4 w-4 text-green-500" />
                           <AlertTriangle className="h-4 w-4 text-amber-500" />
@@ -503,32 +605,89 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold text-green-600">
-                          {dailyChecks.filter(c => c.is_functional).length}
-                        </span>
-                        <span className="text-muted-foreground">/</span>
-                        <span className="text-lg text-amber-600">
-                          {dailyChecks.filter(c => !c.is_functional).length}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">OK / With Issues</p>
+                      {isLoading.dashboard ? (
+                        <div className="space-y-2">
+                          <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
+                          <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-bold text-green-600">
+                                {dailyChecks.filter(c => c.is_functional).length}
+                              </span>
+                              {trendData.functional.change > 0 && (
+                                <span className={`text-xs flex items-center ${trendData.functional.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                                  {trendData.functional.isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                  {trendData.functional.change}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-lg text-amber-600">
+                              {dailyChecks.filter(c => !c.is_functional).length}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">OK / With Issues</p>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
 
                   {/* Problematic Sites */}
-                  <Card className="border-l-4 border-l-red-500">
+                  <Card 
+                    className="border-l-4 border-l-red-500 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => {
+                      // Filter to only show problematic sites in reports
+                      const problematicSites = dailyChecks.filter(c => c.has_problem);
+                      if (problematicSites.length > 0) {
+                        generateAndDownloadPDF(problematicSites, 'problematic-sites-');
+                      }
+                    }}
+                  >
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
-                        <span>Problematic Sites</span>
+                        <div className="flex items-center gap-2 group">
+                          <span>Problematic Sites</span>
+                          <div className="relative group">
+                            <Info className="h-3.5 w-3.5 text-muted-foreground/70" />
+                            <div className="absolute hidden group-hover:block z-10 w-48 p-2 -ml-4 mt-1 text-xs bg-popover text-popover-foreground rounded-md shadow-lg border">
+                              Click to download a report of all problematic sites
+                            </div>
+                          </div>
+                        </div>
                         <AlertTriangle className="h-4 w-4 text-red-500" />
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold text-red-600">
-                        {dailyChecks.filter(c => c.has_problem).length}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Needs attention</p>
+                      {isLoading.dashboard ? (
+                        <div className="space-y-2">
+                          <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
+                          <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-2">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-2xl font-bold text-red-600">
+                                {dailyChecks.filter(c => c.has_problem).length}
+                              </span>
+                              {trendData.problematic.change > 0 && (
+                                <span className={`text-xs flex items-center ${trendData.problematic.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                                  {trendData.problematic.isPositive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                                  {trendData.problematic.change}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {dailyChecks.filter(c => c.has_problem).length > 0 
+                              ? 'Needs immediate attention' 
+                              : 'No critical issues'}
+                          </p>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
