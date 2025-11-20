@@ -67,6 +67,7 @@ const Sentinel = () => {
   const [reportDate, setReportDate] = useState<Date>();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
+  const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [isLoading, setIsLoading] = useState({
     checks: false,
     pdf: false,
@@ -792,19 +793,61 @@ const Sentinel = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {websites.map((website) => (
-                        <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-foreground">{website.name}</h3>
-                            <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">{website.url}<ExternalLink className="w-3 h-3" /></a>
+                      {websites
+                        .slice(0, showAllWebsites ? websites.length : 5)
+                        .map((website) => (
+                          <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-foreground">{website.name}</h3>
+                              <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                {website.url}
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => { 
+                                  setWebsiteName(website.name); 
+                                  setWebsiteUrl(website.url); 
+                                  setEditingId(website.id); 
+                                }}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                onClick={() => { 
+                                  saveWebsites(websites.filter(w => w.id !== website.id)); 
+                                  toast({ title: "Success", description: "Website deleted" }); 
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => { setWebsiteName(website.name); setWebsiteUrl(website.url); setEditingId(website.id); }}><Edit className="w-4 h-4" /></Button>
-                            <Button variant="destructive" size="sm" onClick={() => { saveWebsites(websites.filter(w => w.id !== website.id)); toast({ title: "Success", description: "Website deleted" }); }}><Trash2 className="w-4 h-4" /></Button>
-                          </div>
-                        </div>
-                      ))}
-                      {websites.length === 0 && <p className="text-center text-muted-foreground py-8">No websites added yet</p>}
+                        ))}
+                      
+                      {websites.length === 0 && (
+                        <p className="text-center text-muted-foreground py-8">No websites added yet</p>
+                      )}
+                      
+                      {websites.length > 5 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-500 hover:bg-blue-50 hover:text-blue-600 w-full justify-center mt-2"
+                          onClick={() => setShowAllWebsites(!showAllWebsites)}
+                        >
+                          {showAllWebsites ? (
+                            <span>Show Less</span>
+                          ) : (
+                            <span>View All {websites.length} Websites</span>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
