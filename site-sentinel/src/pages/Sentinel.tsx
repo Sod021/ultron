@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
@@ -441,16 +441,127 @@ const Sentinel = () => {
         {!isChecking ? (
           <>
             {activeTab === "dashboard" && (
-              <div>
-                <h2 className="text-3xl font-bold text-foreground mb-6">Dashboard</h2>
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-bold text-foreground">Dashboard</h2>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                    <span>Last updated: {new Date().toLocaleTimeString()}</span>
+                  </div>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  {/* Total Websites */}
+                  <Card className="border-l-4 border-l-blue-500">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                        <span>Total Websites</span>
+                        <Globe className="h-4 w-4 text-blue-500" />
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{websites.length}</div>
+                      <p className="text-xs text-muted-foreground">Tracked in system</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Live Status */}
+                  <Card className="border-l-4 border-l-green-500">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                        <span>Live Status</span>
+                        <div className="flex items-center gap-1">
+                          <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                          <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold text-green-600">
+                          {dailyChecks.filter(c => c.is_live).length}
+                        </span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className="text-lg text-muted-foreground">
+                          {dailyChecks.filter(c => !c.is_live).length}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Live / Down</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Functional Status */}
+                  <Card className="border-l-4 border-l-amber-500">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                        <span>Functional Status</span>
+                        <div className="flex items-center gap-1">
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold text-green-600">
+                          {dailyChecks.filter(c => c.is_functional).length}
+                        </span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className="text-lg text-amber-600">
+                          {dailyChecks.filter(c => !c.is_functional).length}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">OK / With Issues</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Problematic Sites */}
+                  <Card className="border-l-4 border-l-red-500">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                        <span>Problematic Sites</span>
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-red-600">
+                        {dailyChecks.filter(c => c.has_problem).length}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Needs attention</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={startDailyCheck}>
+                    <RefreshCw className="h-6 w-6" />
+                    <span>Run Checks</span>
+                  </Button>
+                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => setActiveTab('websites')}>
+                    <Plus className="h-6 w-6" />
+                    <span>Add Website</span>
+                  </Button>
+                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => generateAndDownloadPDF(dailyChecks, 'full-report-')}>
+                    <Download className="h-6 w-6" />
+                    <span>Export Report</span>
+                  </Button>
+                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => setActiveTab('reports')}>
+                    <FileText className="h-6 w-6" />
+                    <span>View Reports</span>
+                  </Button>
+                </div>
+
                 <Card>
                   <CardHeader>
                     <CardTitle>Daily Checks</CardTitle>
                     <CardDescription>Start manual website monitoring checks</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-muted-foreground mb-4">Total websites: <span className="font-semibold text-foreground">{websites.length}</span></p>
-                    <Button onClick={startDailyCheck} size="lg">Start Daily Checks</Button>
+                    <Button onClick={startDailyCheck} size="lg" className="w-full sm:w-auto">
+                      Start Daily Checks
+                    </Button>
                   </CardContent>
                 </Card>
               </div>
