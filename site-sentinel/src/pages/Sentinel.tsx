@@ -433,27 +433,36 @@ const Sentinel = () => {
         totalWidth * 0.2   // Notes (20%)
       ];
 
-      // Set font to Courier and text color to black
+      // Set default font to Courier and text color to black
       doc.setFont('courier');
       doc.setTextColor(0, 0, 0); // Black color
       
       // Create the autoTable configuration with proper typing
       autoTable(doc, {
         head: [[
-          { content: 'Website', styles: { fontStyle: 'bold' } },
-          { content: 'Live', styles: { fontStyle: 'bold' } },
-          { content: 'Functional', styles: { fontStyle: 'bold' } },
-          { content: 'Issue', styles: { fontStyle: 'bold' } },
-          { content: 'Notes', styles: { fontStyle: 'bold' } }
+          { content: 'Website', styles: { font: 'courier', fontStyle: 'bold' } },
+          { content: 'Live', styles: { font: 'courier', fontStyle: 'bold' } },
+          { content: 'Functional', styles: { font: 'courier', fontStyle: 'bold' } },
+          { content: 'Issue', styles: { font: 'courier', fontStyle: 'bold' } },
+          { content: 'Notes', styles: { font: 'courier', fontStyle: 'bold' } }
         ]],
         body: tableData,
         startY: 40,
         theme: 'grid',
         margin: { left: margin, right: margin },
+        styles: {
+          font: 'courier',
+          fontSize: 10,
+          cellPadding: 3,
+          lineColor: [200, 200, 200],
+          lineWidth: 0.1,
+          overflow: 'linebreak',
+          textColor: [0, 0, 0]
+        },
         headStyles: {
           fillColor: [241, 243, 245],
-          textColor: [0, 0, 0], // Black color
-          font: 'helvetica',
+          textColor: [0, 0, 0],
+          font: 'courier',
           fontStyle: 'bold',
           fontSize: 12,
           halign: 'center',
