@@ -12,7 +12,10 @@ import { format } from "date-fns";
 import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import jsPDF from "jspdf";
+// Import jsPDF and autoTable
+import { jsPDF } from 'jspdf';
+import autoTable, { CellDef, RowInput } from 'jspdf-autotable';
+import 'jspdf-autotable';
 import html2canvas from "html2canvas";
 import {
   AlertDialog,
@@ -331,88 +334,168 @@ const Sentinel = () => {
     });
   };
 
-  const clearAllReports = () => {
-    setDailyChecks([]);
-    setReportData([]);
-    localStorage.removeItem("sentinel_daily_checks");
-    setShowClearConfirm(false);
-    toast({ title: "Success", description: "All reports have been cleared" });
-  };
-
   const generateAndDownloadPDF = (checks: DailyCheck[], filenamePrefix: string) => {
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 20;
-      let yPos = 20;
-
+      // Initialize jsPDF
+      const doc = new jsPDF({
+        orientation: 'l',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
       // Add title
-      pdf.setFontSize(22);
-      const title = filenamePrefix.includes('problematic') 
-        ? 'Problematic Websites Report' 
-        : 'Sentinel Report';
-      pdf.text(title, margin, yPos);
-      yPos += 10;
+      doc.setFontSize(22);
+      doc.text(
+        filenamePrefix.includes('problematic') ? 'Problematic Websites Report' : 'Sentinel Report',
+        14,
+        20
+      );
       
       // Add date
-      pdf.setFontSize(12);
-      pdf.setTextColor(100);
-      pdf.text(`Report Date: ${reportDate ? format(reportDate, "PPPP") : 'N/A'}`, margin, yPos);
-      yPos += 15;
-
-      // Add report data
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.setTextColor(100);
+      doc.text(
+        `Report Date: ${reportDate ? format(reportDate, "PPPP") : 'N/A'}`,
+        14,
+        30
+      );
       
-      checks.forEach((check, index) => {
-        // Add page if needed
-        if (yPos > 250) {
-          pdf.addPage();
-          yPos = 20;
-        }
+      // Type definitions for table cells
+      type CellStyle = {
+        halign: 'left' | 'center' | 'right';
+        fontStyle?: 'normal' | 'bold' | 'italic' | 'bolditalic';
+        textColor?: [number, number, number];
+        fontSize?: number;
+      };
 
-        // Website name
-        pdf.setFont(undefined, 'bold');
-        pdf.text(`${index + 1}. ${check.website_name}`, margin, yPos);
-        yPos += 7;
+      type TableCell = {
+        content: string;
+        styles: CellStyle;
+      };
 
-        // Website URL - Add as clickable link
-        pdf.setFont(undefined, 'normal');
-        pdf.setTextColor(0, 0, 255);
-        const urlText = check.website_url;
-        const urlWidth = pdf.getTextWidth(urlText);
-        pdf.text(urlText, margin + 5, yPos);
-        pdf.link(margin + 5, yPos - 3, urlWidth, 5, { url: check.website_url });
-        pdf.setTextColor(0, 0, 0);
-        yPos += 7;
-
-        // Status with plain text indicators
-        pdf.text(`Status: ${check.is_live ? 'Live' : 'Not Live'}`, margin + 5, yPos);
-        yPos += 7;
-        
-        // Functionality with plain text indicators
-        pdf.text(`Functional: ${check.is_functional ? 'Yes' : 'No'}`, margin + 5, yPos);
-        yPos += 7;
-
-        // Problem status
-        pdf.text(`Problem: ${check.has_problem ? 'Yes' : 'No'}`, margin + 5, yPos);
-        yPos += 7;
-
+      // Prepare table data as a 2D array of CellDef for autoTable
+      const tableData: CellDef[][] = checks.map(check => [
+        // Website
+        {
+          content: `${check.website_name}\n${check.website_url}`,
+          styles: { 
+            halign: 'left',
+            fontStyle: 'bold' as const
+          }
+        },
+        // Live
+        {
+          content: check.is_live ? 'Yes' : 'No',
+          styles: { 
+            halign: 'center',
+            fontStyle: 'bold' as const,
+            textColor: check.is_live ? [0, 150, 0] as [number, number, number] : [200, 0, 0] as [number, number, number]
+          }
+        },
+        // Functional
+        {
+          content: check.is_functional ? 'Yes' : 'No',
+          styles: { 
+            halign: 'center',
+            fontStyle: 'bold' as const,
+            textColor: check.is_functional ? [0, 150, 0] as [number, number, number] : [200, 0, 0] as [number, number, number]
+          }
+        },
+        // Issue
+        {
+          content: check.has_problem ? 'Yes' : 'No',
+          styles: { 
+            halign: 'center',
+            fontStyle: 'bold' as const,
+            textColor: check.has_problem ? [200, 0, 0] as [number, number, number] : [100, 100, 100] as [number, number, number]
+          }
+        },
         // Notes
-        if (check.notes) {
-          const splitNotes = pdf.splitTextToSize(`Notes: ${check.notes}`, pageWidth - (margin * 2) - 5);
-          pdf.text(splitNotes, margin + 5, yPos);
-          yPos += splitNotes.length * 7;
+        {
+          content: check.notes || '-',
+          styles: {
+            halign: 'left',
+            fontStyle: 'normal' as const
+          }
         }
+      ]);
 
-        // Add space between entries
-        yPos += 10;
+      // Calculate column widths (A4 width in landscape is 297mm, leave some margin)
+      const margin = 10;
+      const totalWidth = 297 - (2 * margin);
+      
+      // Define column widths (adjust these values as needed)
+      const colWidths = [
+        totalWidth * 0.4,  // Website (40%)
+        totalWidth * 0.1,  // Live (10%)
+        totalWidth * 0.15, // Functional (15%)
+        totalWidth * 0.15, // Issue (15%)
+        totalWidth * 0.2   // Notes (20%)
+      ];
+
+      // Set font to Courier and text color to black
+      doc.setFont('courier');
+      doc.setTextColor(0, 0, 0); // Black color
+      
+      // Create the autoTable configuration with proper typing
+      autoTable(doc, {
+        head: [[
+          { content: 'Website', styles: { fontStyle: 'bold' } },
+          { content: 'Live', styles: { fontStyle: 'bold' } },
+          { content: 'Functional', styles: { fontStyle: 'bold' } },
+          { content: 'Issue', styles: { fontStyle: 'bold' } },
+          { content: 'Notes', styles: { fontStyle: 'bold' } }
+        ]],
+        body: tableData,
+        startY: 40,
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: {
+          fillColor: [241, 243, 245],
+          textColor: [0, 0, 0], // Black color
+          font: 'helvetica',
+          fontStyle: 'bold',
+          fontSize: 12,
+          halign: 'center',
+          lineWidth: 0.1,
+          cellPadding: 6
+        },
+        columnStyles: {
+          0: { 
+            cellWidth: colWidths[0],
+            halign: 'left',
+            valign: 'middle',
+            cellPadding: { left: 5, right: 2, top: 3, bottom: 3 }
+          },
+          1: { 
+            cellWidth: colWidths[1],
+            halign: 'center',
+            valign: 'middle'
+          },
+          2: { 
+            cellWidth: colWidths[2],
+            halign: 'center',
+            valign: 'middle'
+          },
+          3: { 
+            cellWidth: colWidths[3],
+            halign: 'center',
+            valign: 'middle'
+          },
+          4: { 
+            cellWidth: colWidths[4],
+            halign: 'left',
+            valign: 'middle',
+            cellPadding: { left: 5, right: 5, top: 3, bottom: 3 }
+          }
+        }
       });
 
       // Save the PDF
       const filename = `${filenamePrefix}${format(reportDate || new Date(), "yyyy-MM-dd")}.pdf`;
-      pdf.save(filename);
+      doc.save(filename);
       
+      // Show success toast
       toast({ 
         title: "Success", 
         description: `Report downloaded with ${checks.length} ${filenamePrefix.includes('problematic') ? 'problematic ' : ''}websites` 
@@ -421,12 +504,21 @@ const Sentinel = () => {
       console.error('Error generating PDF:', error);
       toast({ 
         title: "Error", 
-        description: `Failed to generate ${filenamePrefix.includes('problematic') ? 'problematic websites ' : ''}PDF`, 
+        description: `Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive" 
       });
     }
   };
 
+  const clearAllReports = () => {
+    setDailyChecks([]);
+    setReportData([]);
+    localStorage.removeItem("sentinel_daily_checks");
+    setShowClearConfirm(false);
+    toast({ title: "Success", description: "All reports have been cleared" });
+  };
+
+// ...
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "websites", label: "Websites", icon: Globe },
@@ -891,37 +983,79 @@ const Sentinel = () => {
                         )}
                       </div>
                       {reportData.length > 0 && (
-                        <div ref={reportRef} className="mt-6 space-y-4 p-6 bg-card rounded-lg">
-                          <div className="mb-6"><h3 className="text-2xl font-bold text-foreground">Sentinel Report</h3><p className="text-muted-foreground">{reportDate && format(reportDate, "PPPP")}</p></div>
-                          {reportData.map((check) => (
-                            <Card key={check.id}><CardContent className="pt-6"><div className="space-y-3">
-                              <h4 className="font-semibold text-lg">{check.website_name}</h4>
-                              <div className="flex flex-wrap gap-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground">Live:</span>
-                                  {check.is_live ? 
-                                    <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : 
-                                    <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>
-                                  }
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground">Functional:</span>
-                                  {check.is_functional ? 
-                                    <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />Yes</Badge> : 
-                                    <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />No</Badge>
-                                  }
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-muted-foreground">Problem:</span>
-                                  {check.has_problem ? 
-                                    <Badge variant="destructive"><AlertTriangle className="w-3 h-3 mr-1" />Yes</Badge> : 
-                                    <Badge className="bg-gray-200 text-gray-800"><CheckCircle2 className="w-3 h-3 mr-1" />No</Badge>
-                                  }
-                                </div>
-                              </div>
-                              {check.notes && <div><span className="text-sm text-muted-foreground">Notes:</span><p className="text-sm mt-1">{check.notes}</p></div>}
-                            </div></CardContent></Card>
-                          ))}
+                        <div ref={reportRef} className="mt-6 bg-card rounded-lg overflow-hidden">
+                          <div className="p-6">
+                            <h3 className="text-2xl font-bold text-foreground mb-1">Sentinel Report</h3>
+                            <p className="text-muted-foreground mb-6">{reportDate && format(reportDate, "PPPP")}</p>
+                            
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse">
+                                <thead>
+                                  <tr className="bg-muted/50">
+                                    <th className="border p-2 text-left">Website</th>
+                                    <th className="border p-2 w-24">Live</th>
+                                    <th className="border p-2 w-24">Functional</th>
+                                    <th className="border p-2 w-24">Issue</th>
+                                    <th className="border p-2 text-left">Notes</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {reportData.map((check) => (
+                                    <tr key={check.id} className="hover:bg-muted/50">
+                                      <td className="border p-2">
+                                        <div className="font-medium">{check.website_name}</div>
+                                        <a 
+                                          href={check.website_url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer" 
+                                          className="text-sm text-primary hover:underline flex items-center gap-1"
+                                        >
+                                          {check.website_url}
+                                          <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                      </td>
+                                      <td className="border p-2 text-center">
+                                        {check.is_live ? (
+                                          <Badge className="bg-green-500 hover:bg-green-500/90">
+                                            <CheckCircle2 className="w-3 h-3 mr-1" /> Yes
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="destructive">
+                                            <XCircle className="w-3 h-3 mr-1" /> No
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td className="border p-2 text-center">
+                                        {check.is_functional ? (
+                                          <Badge className="bg-green-500 hover:bg-green-500/90">
+                                            <CheckCircle2 className="w-3 h-3 mr-1" /> Yes
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="destructive">
+                                            <XCircle className="w-3 h-3 mr-1" /> No
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td className="border p-2 text-center">
+                                        {check.has_problem ? (
+                                          <Badge variant="destructive">
+                                            <AlertTriangle className="w-3 h-3 mr-1" /> Yes
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="outline" className="text-muted-foreground">
+                                            <CheckCircle2 className="w-3 h-3 mr-1" /> No
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td className="border p-2 text-sm text-muted-foreground max-w-xs">
+                                        {check.notes || '-'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
