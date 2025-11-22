@@ -53,6 +53,7 @@ const Sentinel = () => {
 
   const [isChecking, setIsChecking] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
   const [checkComplete, setCheckComplete] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -138,7 +139,7 @@ const Sentinel = () => {
           if (header === 'name') website.name = values[index] || `Website ${i}`;
           if (header === 'url') {
             let url = values[index];
-            if (!url.startsWith('http')) {
+            if (!url.match(/^https?:\/\//i)) {
               url = `https://${url}`;
             }
             website.url = url;
@@ -223,10 +224,21 @@ const Sentinel = () => {
   const stopDailyChecks = () => {
     setIsStopping(true);
     setIsChecking(false);
+    setIsPaused(false);
     setCheckComplete(false);
     setCurrentCheckIndex(0);
     setIsStopping(false);
     toast({ title: "Stopped", description: "Website checks have been stopped" });
+  };
+
+  const pauseDailyChecks = () => {
+    setIsPaused(!isPaused);
+    toast({ 
+      title: isPaused ? "Resumed" : "Paused", 
+      description: isPaused 
+        ? "Resuming website checks" 
+        : "Checks are paused. Click Resume to continue." 
+    });
   };
 
   const startDailyCheck = () => {
@@ -235,6 +247,7 @@ const Sentinel = () => {
       return;
     }
     setIsChecking(true);
+    setIsPaused(false);
     setCurrentCheckIndex(0);
     setCheckComplete(false);
     setIsLive("yes");
@@ -248,6 +261,12 @@ const Sentinel = () => {
   };
 
   const handleNext = async () => {
+    if (isPaused) {
+      setIsPaused(false);
+      toast({ title: "Resumed", description: "Resuming website checks" });
+      return;
+    }
+    
     const currentWebsite = websites[currentCheckIndex];
     const finalNotes = selectedIssue === "Other (Specify Below)" 
       ? notes 
@@ -1206,13 +1225,72 @@ const Sentinel = () => {
             <CardContent>
               {!checkComplete ? (
                 <div className="space-y-6">
-                  <a href={websites[currentCheckIndex].url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-2">{websites[currentCheckIndex].url}<ExternalLink className="w-4 h-4" /></a>
-                  <div><Label className="mb-3 block">Is it live?</Label><RadioGroup value={isLive} onValueChange={setIsLive}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="live-yes" /><Label htmlFor="live-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="live-no" /><Label htmlFor="live-no">No</Label></div></RadioGroup></div>
-                  <div><Label className="mb-3 block">Is it functional?</Label><RadioGroup value={isFunctional} onValueChange={setIsFunctional}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="functional-yes" /><Label htmlFor="functional-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="functional-no" /><Label htmlFor="functional-no">No</Label></div></RadioGroup></div>
-                  <div><Label className="mb-3 block">Is there a Problem?</Label><RadioGroup value={hasProblem} onValueChange={setHasProblem}><div className="flex items-center space-x-2"><RadioGroupItem value="yes" id="problem-yes" /><Label htmlFor="problem-yes">Yes</Label></div><div className="flex items-center space-x-2"><RadioGroupItem value="no" id="problem-no" /><Label htmlFor="problem-no">No</Label></div></RadioGroup></div>
-                  <div>
-                    <Label htmlFor="notes" className="mb-2 block">Notes / Memo</Label>
-                    <div className="mb-2">
+                  <a 
+                    href={websites[currentCheckIndex].url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-primary hover:underline flex items-center gap-2"
+                  >
+                    {websites[currentCheckIndex].url}
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="mb-2 block">Is it live?</Label>
+                      <RadioGroup 
+                        value={isLive} 
+                        onValueChange={setIsLive} 
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="yes" id="live-yes" />
+                          <Label htmlFor="live-yes">Yes</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="no" id="live-no" />
+                          <Label htmlFor="live-no">No</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block">Is it functional?</Label>
+                      <RadioGroup 
+                        value={isFunctional} 
+                        onValueChange={setIsFunctional}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="yes" id="functional-yes" />
+                          <Label htmlFor="functional-yes">Yes</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="no" id="functional-no" />
+                          <Label htmlFor="functional-no">No</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block">Is there a Problem?</Label>
+                      <RadioGroup 
+                        value={hasProblem} 
+                        onValueChange={setHasProblem}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="yes" id="problem-yes" />
+                          <Label htmlFor="problem-yes">Yes</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="no" id="problem-no" />
+                          <Label htmlFor="problem-no">No</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="issue" className="mb-2 block">Issue Type</Label>
                       <Select 
                         value={selectedIssue} 
                         onValueChange={(value) => {
@@ -1240,38 +1318,45 @@ const Sentinel = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
                     {(isCustomNote || !selectedIssue) && (
-                      <Textarea
-                        id="notes"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder={
-                          selectedIssue === "Other (Specify Below)" 
-                            ? "Please specify the issue..." 
-                            : "Any additional notes..."
-                        }
-                        rows={3}
-                        className="mt-2"
-                      />
+                      <div>
+                        <Label htmlFor="notes" className="mb-2 block">Notes</Label>
+                        <Textarea
+                          id="notes"
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          placeholder={
+                            selectedIssue === "Other (Specify Below)" 
+                              ? "Please specify the issue..." 
+                              : "Any additional notes..."
+                          }
+                          rows={3}
+                          className="mt-1"
+                        />
+                      </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2 mt-4">
                     <Button 
-                      onClick={handleNext} 
-                      size="lg" 
-                      className="flex-1"
+                      variant="outline"
+                      onClick={pauseDailyChecks}
                       disabled={isStopping}
                     >
-                      {currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}
+                      {isPaused ? 'Resume' : 'Pause'}
                     </Button>
                     <Button 
-                      onClick={stopDailyChecks} 
-                      variant="outline" 
-                      size="lg"
-                      className="flex-1"
+                      variant="destructive"
+                      onClick={stopDailyChecks}
                       disabled={isStopping}
                     >
-                      {isStopping ? 'Stopping...' : 'Stop'}
+                      Stop
+                    </Button>
+                    <Button 
+                      onClick={handleNext} 
+                      disabled={isStopping || isPaused}
+                    >
+                      {currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}
                     </Button>
                   </div>
                 </div>
