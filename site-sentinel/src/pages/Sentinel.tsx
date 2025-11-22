@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 // Import jsPDF and autoTable
@@ -973,21 +973,131 @@ const Sentinel = () => {
             )}
 
             {activeTab === "reports" && (
-              <div>
-                <h2 className="text-3xl font-bold text-foreground mb-6">Reports</h2>
+              <div className="space-y-6">
+                <h2 className="text-3xl font-bold text-foreground">Reports</h2>
+                
+                {/* Recent Reports Section */}
                 <Card>
-                  <CardHeader><CardTitle>Generate Report</CardTitle><CardDescription>View check results for a specific date</CardDescription></CardHeader>
+                  <CardHeader>
+                    <CardTitle>Recent Reports</CardTitle>
+                    <CardDescription>Your most recent website check reports</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {dailyChecks.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No reports available. Generate your first report to see it here.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {Array.from(new Set(dailyChecks.map(check => check.created_at.split('T')[0])))
+                          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+                          .slice(0, 5)
+                          .map((date, index) => {
+                            const dateChecks = dailyChecks.filter(
+                              check => check.created_at.startsWith(date)
+                            );
+                            const totalChecks = dateChecks.length;
+                            const liveCount = dateChecks.filter(c => c.is_live).length;
+                            const issuesCount = dateChecks.filter(c => c.has_problem).length;
+                            
+                            return (
+                              <div key={date} className="flex items-center justify-between p-4 border rounded-lg">
+                                <div>
+                                  <h3 className="font-medium">
+                                    {format(new Date(date), 'MMMM d, yyyy')}
+                                  </h3>
+                                  <div className="flex gap-4 mt-1 text-sm text-muted-foreground">
+                                    <span className="flex items-center">
+                                      <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-green-500" />
+                                      {liveCount}/{totalChecks} Live
+                                    </span>
+                                    {issuesCount > 0 && (
+                                      <span className="flex items-center text-amber-500">
+                                        <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                                        {issuesCount} Issues
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => {
+                                      setReportDate(new Date(date));
+                                      setReportData(dateChecks);
+                                      // Scroll to report section
+                                      setTimeout(() => {
+                                        const reportSection = document.getElementById('generated-report');
+                                        if (reportSection) {
+                                          reportSection.scrollIntoView({ behavior: 'smooth' });
+                                        }
+                                      }, 100);
+                                    }}
+                                  >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    View
+                                  </Button>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => {
+                                      generateAndDownloadPDF(dateChecks, `report-${date}-`);
+                                    }}
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    Download
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                
+                {/* Generate New Report Section */}
+                <Card id="generate-report">
+                  <CardHeader>
+                    <CardTitle>Generate New Report</CardTitle>
+                    <CardDescription>View check results for a specific date</CardDescription>
+                  </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      <div><Label>Select Date</Label>
-                        <Popover><PopoverTrigger asChild><Button variant="outline" className="w-full justify-start text-left font-normal"><CalendarIcon className="mr-2 h-4 w-4" />{reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={reportDate} onSelect={setReportDate} initialFocus /></PopoverContent></Popover>
-                      </div>
+                      <div>
+                            <Label>Select Date</Label>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <Calendar 
+                                  mode="single" 
+                                  selected={reportDate} 
+                                  onSelect={setReportDate} 
+                                  initialFocus 
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button onClick={generateReport} disabled={checksLoading}>Generate Report</Button>
+                        <Button onClick={generateReport} disabled={checksLoading}>
+                          {checksLoading ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <FileText className="w-4 h-4 mr-2" />
+                          )}
+                          Generate Report
+                        </Button>
                         {reportData.length > 0 && (
                           <>
                             <Button onClick={downloadPDF} variant="secondary">
-                              <Download className="w-4 h-4 mr-2" />Download Full Report
+                              <Download className="w-4 h-4 mr-2" />
+                              Download Full Report
                             </Button>
                             <Button 
                               onClick={downloadProblematicPDF} 
