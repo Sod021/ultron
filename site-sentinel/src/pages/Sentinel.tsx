@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, ChangeEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -232,33 +232,164 @@ const Sentinel = () => {
   };
 
   const pauseDailyChecks = () => {
-    setIsPaused(!isPaused);
-    toast({ 
-      title: isPaused ? "Resumed" : "Paused", 
-      description: isPaused 
-        ? "Resuming website checks" 
-        : "Checks are paused. Click Resume to continue." 
-    });
+    const newPausedState = !isPaused;
+    
+    if (newPausedState) {
+      // When pausing, save the current state
+      const stateToSave = {
+        index: currentCheckIndex,
+        isLive,
+        isFunctional,
+        hasProblem,
+        selectedIssue,
+        notes,
+        isCustomNote,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem('pausedCheck', JSON.stringify(stateToSave));
+      
+      // Set a flag in session storage to indicate we're in a paused state
+      sessionStorage.setItem('isPaused', 'true');
+      
+      // When pausing, we should also set isChecking to false to allow navigation
+      setIsChecking(false);
+      
+      toast({
+        title: "Paused",
+        description: "Checks are paused. You can leave this page and come back later."
+      });
+    } else {
+      // When resuming, clear the saved state
+      localStorage.removeItem('pausedCheck');
+      sessionStorage.removeItem('isPaused');
+      
+      // When resuming, set isChecking back to true
+      setIsChecking(true);
+      
+      toast({
+        title: "Resumed",
+        description: "Resuming website checks"
+      });
+    }
+    
+    setIsPaused(newPausedState);
   };
 
-  const startDailyCheck = () => {
-    if (websites.length === 0) {
-      toast({ title: "Error", description: "Please add websites first", variant: "destructive" });
-      return;
+  const checkPausedState = useCallback(() => {
+    const savedState = localStorage.getItem('pausedCheck');
+    const isCurrentlyPaused = sessionStorage.getItem('isPaused') === 'true';
+    
+    if (savedState && isCurrentlyPaused) {
+      try {
+        const state = JSON.parse(savedState);
+        const savedTime = new Date(state.timestamp);
+        const hoursDiff = (new Date().getTime() - savedTime.getTime()) / (1000 * 60 * 60);
+        
+        if (hoursDiff < 24) {
+          setIsPaused(true);
+          setCurrentCheckIndex(state.index);
+          setIsLive(state.isLive);
+          setIsFunctional(state.isFunctional);
+          setHasProblem(state.hasProblem);
+          setSelectedIssue(state.selectedIssue);
+          setNotes(state.notes);
+          setIsCustomNote(state.isCustomNote);
+          
+          if (!isChecking) {
+            toast({
+              title: "Paused Check Found",
+              description: "Found a paused check. Click Resume to continue where you left off."
+            });
+          }
+          return true;
+        }
+      } catch (e) {
+        console.error("Error restoring paused state:", e);
+      }
     }
+    
+    if (!isCurrentlyPaused && savedState) {
+      localStorage.removeItem('pausedCheck');
+    }
+    
+    return false;
+  }, [isChecking]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (sessionStorage.getItem('isPaused') === 'true') {
+        checkPausedState();
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [checkPausedState]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only prevent navigation if there's an active check AND it's not paused
+      if (isChecking && !isPaused) {
+        const message = "You have an active check in progress. Are you sure you want to leave?";
+        e.preventDefault();
+        e.returnValue = message; // For Chrome
+        return message; // For other browsers
+      }
+      // If checks are paused or not running, allow navigation without prompt
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isChecking, isPaused]);
+
+  const startNewCheck = useCallback(() => {
+    setCurrentCheckIndex(0);
     setIsChecking(true);
     setIsPaused(false);
-    setCurrentCheckIndex(0);
-    setCheckComplete(false);
     setIsLive("yes");
     setIsFunctional("yes");
     setHasProblem("no");
-    setNotes("");
     setSelectedIssue("");
+    setNotes("");
+    setIsCustomNote(true);
+  }, []);
+
+  const startDailyCheck = useCallback(() => {
+    // Check if websites are still loading
+    if (websitesLoading) {
+      toast({
+        title: "Loading...",
+        description: "Please wait while we load your websites",
+      });
+      return;
+    }
+
+    // Check if there are any websites
+    if (websites.length === 0) {
+      toast({ 
+        title: "No Websites Found", 
+        description: "Please add websites before starting checks", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // Reset states
     setIsCustomNote(false);
     setIsStopping(false);
     setReportData([]);
-  };
+
+    // Check for paused state
+    const hasPausedState = checkPausedState();
+    
+    if (hasPausedState) {
+      setIsChecking(true);
+    } else {
+      startNewCheck();
+    }
+  }, [websites, websitesLoading, checkPausedState, startNewCheck]);
 
   const handleNext = async () => {
     if (isPaused) {
