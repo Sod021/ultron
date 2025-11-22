@@ -452,7 +452,7 @@ const Sentinel = () => {
         margin: { left: margin, right: margin },
         styles: {
           font: 'courier',
-          fontSize: 10,
+          fontSize: 13,
           cellPadding: 3,
           lineColor: [200, 200, 200],
           lineWidth: 0.1,
@@ -464,7 +464,7 @@ const Sentinel = () => {
           textColor: [0, 0, 0],
           font: 'courier',
           fontStyle: 'bold',
-          fontSize: 12,
+          fontSize: 13,
           halign: 'center',
           lineWidth: 0.1,
           cellPadding: 6
