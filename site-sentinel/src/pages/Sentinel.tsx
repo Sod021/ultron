@@ -1337,11 +1337,12 @@ const Sentinel = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex justify-end gap-2 mt-4">
+                  <div className="grid grid-cols-3 gap-2 mt-4 w-full">
                     <Button 
                       variant="outline"
                       onClick={pauseDailyChecks}
                       disabled={isStopping}
+                      className="w-full"
                     >
                       {isPaused ? 'Resume' : 'Pause'}
                     </Button>
@@ -1349,12 +1350,14 @@ const Sentinel = () => {
                       variant="destructive"
                       onClick={stopDailyChecks}
                       disabled={isStopping}
+                      className="w-full"
                     >
                       Stop
                     </Button>
                     <Button 
                       onClick={handleNext} 
                       disabled={isStopping || isPaused}
+                      className="w-full"
                     >
                       {currentCheckIndex < websites.length - 1 ? "Save & Next" : "Finish"}
                     </Button>
