@@ -344,6 +344,7 @@ const Sentinel = () => {
       });
       
       // Add title
+      doc.setFont("courier", "bold");
       doc.setFontSize(22);
       doc.text(
         filenamePrefix.includes('problematic') ? 'Problematic Websites Report' : 'Sentinel Report',
@@ -352,6 +353,7 @@ const Sentinel = () => {
       );
       
       // Add date
+      doc.setFont("courier");
       doc.setFontSize(12);
       doc.setTextColor(100);
       doc.text(
@@ -380,7 +382,7 @@ const Sentinel = () => {
           content: `${check.website_name}\n${check.website_url}`,
           styles: { 
             halign: 'left',
-            fontStyle: 'bold' as const
+            fontStyle: 'normal' as const
           }
         },
         // Live
@@ -388,7 +390,7 @@ const Sentinel = () => {
           content: check.is_live ? 'Yes' : 'No',
           styles: { 
             halign: 'center',
-            fontStyle: 'bold' as const,
+            fontStyle: 'normal' as const,
             textColor: check.is_live ? [0, 150, 0] as [number, number, number] : [200, 0, 0] as [number, number, number]
           }
         },
@@ -397,7 +399,7 @@ const Sentinel = () => {
           content: check.is_functional ? 'Yes' : 'No',
           styles: { 
             halign: 'center',
-            fontStyle: 'bold' as const,
+            fontStyle: 'normal' as const,
             textColor: check.is_functional ? [0, 150, 0] as [number, number, number] : [200, 0, 0] as [number, number, number]
           }
         },
@@ -406,7 +408,7 @@ const Sentinel = () => {
           content: check.has_problem ? 'Yes' : 'No',
           styles: { 
             halign: 'center',
-            fontStyle: 'bold' as const,
+            fontStyle: 'normal' as const,
             textColor: check.has_problem ? [200, 0, 0] as [number, number, number] : [100, 100, 100] as [number, number, number]
           }
         },
@@ -463,7 +465,7 @@ const Sentinel = () => {
           fillColor: [241, 243, 245],
           textColor: [0, 0, 0],
           font: 'courier',
-          fontStyle: 'bold',
+          // fontStyle: 'bold',
           fontSize: 13,
           halign: 'center',
           lineWidth: 0.1,
