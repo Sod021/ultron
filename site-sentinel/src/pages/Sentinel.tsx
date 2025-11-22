@@ -14,9 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 // Import jsPDF and autoTable
 import { jsPDF } from 'jspdf';
-import autoTable, { CellDef, RowInput } from 'jspdf-autotable';
+import autoTable, { CellDef } from 'jspdf-autotable';
 import 'jspdf-autotable';
-import html2canvas from "html2canvas";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,29 +27,30 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-interface Website {
-  id: number;
-  name: string;
-  url: string;
-  created_at: string;
-}
-
-interface DailyCheck {
-  id: number;
-  website_id: number;
-  website_name: string;
-  website_url: string;
-  is_live: boolean;
-  is_functional: boolean;
-  has_problem: boolean;
-  notes: string;
-  created_at: string;
-}
+import { useWebsites, type Website } from "@/hooks/useWebsites";
+import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
 
 const Sentinel = () => {
   const { toast } = useToast();
-  const [websites, setWebsites] = useState<Website[]>([]);
-  const [dailyChecks, setDailyChecks] = useState<DailyCheck[]>([]);
+
+  const { 
+    websites, 
+    isLoading: websitesLoading, 
+    addWebsite: addWebsiteDB, 
+    updateWebsite: updateWebsiteDB, 
+    deleteWebsite: deleteWebsiteDB, 
+    bulkAddWebsites,
+    clearAllWebsites: clearAllWebsitesDB 
+  } = useWebsites();
+
+  const { 
+    dailyChecks, 
+    isLoading: checksLoading, 
+    addDailyCheck: addDailyCheckDB, 
+    getChecksByDate,
+    clearAllChecks: clearAllChecksDB 
+  } = useDailyChecks();
+
   const [isChecking, setIsChecking] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
@@ -71,10 +71,9 @@ const Sentinel = () => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
   const [showAllWebsites, setShowAllWebsites] = useState(false);
+  
+  // Combined loading state for UI display
   const [isLoading, setIsLoading] = useState({
-    checks: false,
-    pdf: false,
-    websites: false,
     dashboard: true // Initial load
   });
   
@@ -86,7 +85,7 @@ const Sentinel = () => {
     problematic: { change: 2, isPositive: false }
   });
   
-  // Simulate loading data
+  // Simulate loading data for dashboard
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsLoading(prev => ({ ...prev, dashboard: false }));
@@ -125,7 +124,8 @@ const Sentinel = () => {
         throw new Error('CSV must include "name" and "url" columns');
       }
 
-      const newWebsites: Website[] = [];
+      // Prepare objects for bulk import
+      const websitesToImport: Partial<Website>[] = [];
       const existingUrls = new Set(websites.map(w => w.url.toLowerCase()));
       const newUrls = new Set<string>();
       const duplicateUrls = new Set<string>();
@@ -150,22 +150,20 @@ const Sentinel = () => {
           if (existingUrls.has(url)) {
             duplicateUrls.add(website.url);
           } else if (!newUrls.has(url)) {
-            newWebsites.push({
-              id: Date.now() + i,
+            websitesToImport.push({
               name: website.name,
               url: website.url,
-              created_at: new Date().toISOString()
             });
             newUrls.add(url);
           }
         }
       }
 
-      if (newWebsites.length > 0) {
-        const updatedWebsites = [...websites, ...newWebsites];
-        saveWebsites(updatedWebsites);
+      if (websitesToImport.length > 0) {
+        // Use the hook for bulk add
+        await bulkAddWebsites(websitesToImport as any); 
         
-        let message = `Successfully imported ${newWebsites.length} website(s)`;
+        let message = `Successfully imported ${websitesToImport.length} website(s)`;
         if (duplicateUrls.size > 0) {
           message += ` (Skipped ${duplicateUrls.size} duplicate URL(s))`;
         }
@@ -197,38 +195,29 @@ const Sentinel = () => {
     }
   };
 
-  useEffect(() => {
-    const storedWebsites = localStorage.getItem("sentinel_websites");
-    const storedChecks = localStorage.getItem("sentinel_daily_checks");
-    if (storedWebsites) setWebsites(JSON.parse(storedWebsites));
-    if (storedChecks) setDailyChecks(JSON.parse(storedChecks));
-  }, []);
-
-  const saveWebsites = (data: Website[]) => {
-    localStorage.setItem("sentinel_websites", JSON.stringify(data));
-    setWebsites(data);
-  };
-
-  const saveDailyChecks = (data: DailyCheck[]) => {
-    localStorage.setItem("sentinel_daily_checks", JSON.stringify(data));
-    setDailyChecks(data);
-  };
-
-  const addWebsite = () => {
+  const addWebsite = async () => {
     if (!websiteName || !websiteUrl) {
       toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" });
       return;
     }
-    if (editingId) {
-      saveWebsites(websites.map(w => w.id === editingId ? { ...w, name: websiteName, url: websiteUrl } : w));
-      toast({ title: "Success", description: "Website updated successfully" });
-      setEditingId(null);
-    } else {
-      saveWebsites([...websites, { id: Date.now(), name: websiteName, url: websiteUrl, created_at: new Date().toISOString() }]);
-      toast({ title: "Success", description: "Website added successfully" });
+    
+    try {
+      if (editingId) {
+        // FIX: Pass arguments individually (id, name, url)
+        await updateWebsiteDB(editingId, websiteName, websiteUrl);
+        toast({ title: "Success", description: "Website updated successfully" });
+        setEditingId(null);
+      } else {
+        // FIX: Pass arguments individually (name, url)
+        await addWebsiteDB(websiteName, websiteUrl);
+        toast({ title: "Success", description: "Website added successfully" });
+      }
+      setWebsiteName("");
+      setWebsiteUrl("");
+    } catch (error) {
+      console.error("Error saving website:", error);
+      toast({ title: "Error", description: "Failed to save website", variant: "destructive" });
     }
-    setWebsiteName("");
-    setWebsiteUrl("");
   };
 
   const stopDailyChecks = () => {
@@ -258,35 +247,40 @@ const Sentinel = () => {
     setReportData([]);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     const currentWebsite = websites[currentCheckIndex];
     const finalNotes = selectedIssue === "Other (Specify Below)" 
       ? notes 
       : selectedIssue || notes;
     
-    saveDailyChecks([...dailyChecks, {
-      id: Date.now(),
-      website_id: currentWebsite.id,
-      website_name: currentWebsite.name,
-      website_url: currentWebsite.url,
-      is_live: isLive === "yes",
-      is_functional: isFunctional === "yes",
-      has_problem: hasProblem === "yes",
-      notes: finalNotes,
-      created_at: new Date().toISOString(),
-    }]);
-    
-    if (currentCheckIndex < websites.length - 1) {
-      setCurrentCheckIndex(currentCheckIndex + 1);
-      setIsLive("yes");
-      setIsFunctional("yes");
-      setHasProblem("no");
-      setNotes("");
-      setSelectedIssue("");
-      setIsCustomNote(false);
-    } else {
-      setCheckComplete(true);
-      toast({ title: "Complete", description: "All checks completed successfully" });
+    try {
+      // Use the hook to add the check
+      await addDailyCheckDB({
+        website_id: currentWebsite.id,
+        website_name: currentWebsite.name,
+        website_url: currentWebsite.url,
+        is_live: isLive === "yes",
+        is_functional: isFunctional === "yes",
+        has_problem: hasProblem === "yes",
+        notes: finalNotes,
+        created_at: new Date().toISOString(),
+      } as any);
+
+      if (currentCheckIndex < websites.length - 1) {
+        setCurrentCheckIndex(currentCheckIndex + 1);
+        setIsLive("yes");
+        setIsFunctional("yes");
+        setHasProblem("no");
+        setNotes("");
+        setSelectedIssue("");
+        setIsCustomNote(false);
+      } else {
+        setCheckComplete(true);
+        toast({ title: "Complete", description: "All checks completed successfully" });
+      }
+    } catch (error) {
+      console.error("Error saving check:", error);
+      toast({ title: "Error", description: "Failed to save check result", variant: "destructive" });
     }
   };
 
@@ -296,7 +290,10 @@ const Sentinel = () => {
       return;
     }
     const selectedDate = format(reportDate, "yyyy-MM-dd");
+    
+    // Filter local data
     const filtered = dailyChecks.filter(check => format(new Date(check.created_at), "yyyy-MM-dd") === selectedDate);
+    
     setReportData(filtered);
     if (filtered.length === 0) toast({ title: "No Data", description: "No check data found for this date" });
   };
@@ -324,14 +321,17 @@ const Sentinel = () => {
     generateAndDownloadPDF(problematicChecks, 'problematic-websites-');
   };
 
-  const clearAllWebsites = () => {
-    setWebsites([]);
-    localStorage.removeItem("sentinel_websites");
-    setIsClearWebsitesDialogOpen(false);
-    toast({
-      title: "Success",
-      description: "All websites have been cleared.",
-    });
+  const clearAllWebsites = async () => {
+    try {
+      await clearAllWebsitesDB();
+      setIsClearWebsitesDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "All websites have been cleared.",
+      });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to clear websites", variant: "destructive" });
+    }
   };
 
   const generateAndDownloadPDF = (checks: DailyCheck[], filenamePrefix: string) => {
@@ -368,11 +368,6 @@ const Sentinel = () => {
         fontStyle?: 'normal' | 'bold' | 'italic' | 'bolditalic';
         textColor?: [number, number, number];
         fontSize?: number;
-      };
-
-      type TableCell = {
-        content: string;
-        styles: CellStyle;
       };
 
       // Prepare table data as a 2D array of CellDef for autoTable
@@ -521,15 +516,17 @@ const Sentinel = () => {
     }
   };
 
-  const clearAllReports = () => {
-    setDailyChecks([]);
-    setReportData([]);
-    localStorage.removeItem("sentinel_daily_checks");
-    setShowClearConfirm(false);
-    toast({ title: "Success", description: "All reports have been cleared" });
+  const clearAllReports = async () => {
+    try {
+      await clearAllChecksDB();
+      setReportData([]);
+      setShowClearConfirm(false);
+      toast({ title: "Success", description: "All reports have been cleared" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to clear reports", variant: "destructive" });
+    }
   };
 
-// ...
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "websites", label: "Websites", icon: Globe },
@@ -611,7 +608,7 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {isLoading.dashboard ? (
+                      {isLoading.dashboard || websitesLoading ? (
                         <div className="space-y-2">
                           <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
                           <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
@@ -656,7 +653,7 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {isLoading.dashboard ? (
+                      {isLoading.dashboard || checksLoading ? (
                         <div className="space-y-2">
                           <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
                           <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
@@ -709,7 +706,7 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {isLoading.dashboard ? (
+                      {isLoading.dashboard || checksLoading ? (
                         <div className="space-y-2">
                           <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
                           <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
@@ -765,7 +762,7 @@ const Sentinel = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {isLoading.dashboard ? (
+                      {isLoading.dashboard || checksLoading ? (
                         <div className="space-y-2">
                           <div className="h-7 w-3/4 bg-muted rounded animate-pulse"></div>
                           <div className="h-4 w-1/2 bg-muted rounded animate-pulse"></div>
@@ -842,7 +839,11 @@ const Sentinel = () => {
                       <div className="space-y-2">
                         <div className="flex gap-2">
                           <div className="flex flex-col sm:flex-row gap-2">
-                            <Button onClick={addWebsite}><Plus className="w-4 h-4 mr-2" />{editingId ? "Update" : "Add"} Website</Button>
+                            <Button onClick={addWebsite} disabled={websitesLoading}>
+                              {websitesLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                              <Plus className="w-4 h-4 mr-2" />
+                              {editingId ? "Update" : "Add"} Website
+                            </Button>
                             <div className="relative">
                               <Button type="button" variant="outline" asChild>
                                 <Label htmlFor="csv-upload" className="cursor-pointer">
@@ -855,6 +856,7 @@ const Sentinel = () => {
                                 accept=".csv"
                                 className="hidden"
                                 onChange={handleCSVImport}
+                                disabled={websitesLoading}
                               />
                             </div>
                             {editingId && (
@@ -889,6 +891,7 @@ const Sentinel = () => {
                       size="sm"
                       onClick={() => setIsClearWebsitesDialogOpen(true)}
                       className="text-white hover:bg-red-600 hover:text-white border-red-200"
+                      disabled={websites.length === 0 || websitesLoading}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Clear All
@@ -896,60 +899,72 @@ const Sentinel = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {websites
-                        .slice(0, showAllWebsites ? websites.length : 5)
-                        .map((website) => (
-                          <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-foreground">{website.name}</h3>
-                              <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                                {website.url}
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => { 
-                                  setWebsiteName(website.name); 
-                                  setWebsiteUrl(website.url); 
-                                  setEditingId(website.id); 
-                                }}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                onClick={() => { 
-                                  saveWebsites(websites.filter(w => w.id !== website.id)); 
-                                  toast({ title: "Success", description: "Website deleted" }); 
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      
-                      {websites.length === 0 && (
-                        <p className="text-center text-muted-foreground py-8">No websites added yet</p>
-                      )}
-                      
-                      {websites.length > 5 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-blue-500 hover:bg-blue-50 hover:text-blue-600 w-full justify-center mt-2"
-                          onClick={() => setShowAllWebsites(!showAllWebsites)}
-                        >
-                          {showAllWebsites ? (
-                            <span>Show Less</span>
-                          ) : (
-                            <span>View All {websites.length} Websites</span>
+                      {websitesLoading ? (
+                         <div className="py-8 flex justify-center">
+                           <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                         </div>
+                      ) : (
+                        <>
+                          {websites
+                            .slice(0, showAllWebsites ? websites.length : 5)
+                            .map((website) => (
+                              <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
+                                <div className="flex-1">
+                                  <h3 className="font-semibold text-foreground">{website.name}</h3>
+                                  <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                    {website.url}
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={() => { 
+                                      setWebsiteName(website.name); 
+                                      setWebsiteUrl(website.url); 
+                                      setEditingId(website.id); 
+                                    }}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                  <Button 
+                                    variant="destructive" 
+                                    size="sm" 
+                                    onClick={async () => { 
+                                      try {
+                                        await deleteWebsiteDB(website.id); 
+                                        toast({ title: "Success", description: "Website deleted" }); 
+                                      } catch (e) {
+                                        toast({ title: "Error", description: "Failed to delete website", variant: "destructive" });
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          
+                          {websites.length === 0 && (
+                            <p className="text-center text-muted-foreground py-8">No websites added yet</p>
                           )}
-                        </Button>
+                          
+                          {websites.length > 5 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-blue-500 hover:bg-blue-50 hover:text-blue-600 w-full justify-center mt-2"
+                              onClick={() => setShowAllWebsites(!showAllWebsites)}
+                            >
+                              {showAllWebsites ? (
+                                <span>Show Less</span>
+                              ) : (
+                                <span>View All {websites.length} Websites</span>
+                              )}
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
                   </CardContent>
@@ -968,7 +983,7 @@ const Sentinel = () => {
                         <Popover><PopoverTrigger asChild><Button variant="outline" className="w-full justify-start text-left font-normal"><CalendarIcon className="mr-2 h-4 w-4" />{reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={reportDate} onSelect={setReportDate} initialFocus /></PopoverContent></Popover>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button onClick={generateReport}>Generate Report</Button>
+                        <Button onClick={generateReport} disabled={checksLoading}>Generate Report</Button>
                         {reportData.length > 0 && (
                           <>
                             <Button onClick={downloadPDF} variant="secondary">
