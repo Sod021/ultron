@@ -100,6 +100,7 @@ const Sentinel = () => {
     "404 Page",
     "Header/Footer Distorted",
     "This site can not be reached",
+    "This page isn not working",
     "Redirecting to Betting Site",
     "Domain Expired",
     "403 Page",
