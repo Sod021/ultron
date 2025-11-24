@@ -99,6 +99,7 @@ const Sentinel = () => {
     "Contact Form Not Working",
     "404 Page",
     "Header/Footer Distorted",
+    "This site can not be reached",
     "Redirecting to Betting Site",
     "Domain Expired",
     "403 Page",
