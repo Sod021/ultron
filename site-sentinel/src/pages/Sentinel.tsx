@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 // Import jsPDF and autoTable
@@ -29,9 +29,11 @@ import {
 
 import { useWebsites, type Website } from "@/hooks/useWebsites";
 import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
+import { ReportPatcher } from "@/components/ReportPatcher";
 
 const Sentinel = () => {
   const { toast } = useToast();
+  const [currentUser, setCurrentUser] = useState<{ email: string } | null>(null);
 
   const { 
     websites, 
@@ -56,7 +58,7 @@ const Sentinel = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
   const [checkComplete, setCheckComplete] = useState(false);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState("reports");
   const reportRef = useRef<HTMLDivElement>(null);
   
   const [websiteName, setWebsiteName] = useState("");
@@ -675,7 +677,12 @@ const Sentinel = () => {
       setShowClearConfirm(false);
       toast({ title: "Success", description: "All reports have been cleared" });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to clear reports", variant: "destructive" });
+      console.error('Error clearing reports:', error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to clear reports", 
+        variant: "destructive" 
+      });
     }
   };
 
@@ -683,6 +690,7 @@ const Sentinel = () => {
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
+    { id: "report-patcher", label: "Report Patcher", icon: Wrench },
   ];
 
   return (
@@ -1121,6 +1129,13 @@ const Sentinel = () => {
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+            )}
+
+            {activeTab === "report-patcher" && (
+              <div className="space-y-6">
+                <h2 className="text-3xl font-bold text-foreground">Report Patcher</h2>
+                <ReportPatcher currentUser={currentUser?.email || 'System'} />
               </div>
             )}
 
