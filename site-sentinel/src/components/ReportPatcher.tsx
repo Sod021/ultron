@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Calendar as CalendarIcon, Download, Save, Loader2, Upload } from 'lucide-react';
+import { Calendar as CalendarIcon, Download, Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,6 @@ import { useDailyChecks } from '@/hooks/useDailyChecks';
 import { useReportFixes } from '@/hooks/useReportFixes';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as pdfjs from 'pdf-parse';
 
 interface ReportPatcherProps {
   currentUser: string;
@@ -29,203 +28,7 @@ export const ReportPatcher = ({ currentUser }: ReportPatcherProps) => {
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [reportData, setReportData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [fixes, setFixes] = useState<Record<number, any>>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Then update the handleFileUpload function
-const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  
-  if (file.type !== 'application/pdf') {
-    toast({
-      title: 'Invalid File',
-      description: 'Please upload a valid PDF file',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  setIsUploading(true);
-  try {
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-      try {
-        const pdfData = e.target?.result;
-        if (!pdfData) return;
-
-        // Parse the PDF
-        const pdf = await pdfjs.default(pdfData);
-        const text = pdf.text;
-        
-        // Debug: Log the extracted PDF text
-        console.log('=== PDF Text Content ===');
-        console.log(text);
-        console.log('=== End of PDF Text ===');
-        
-        // Split the text into lines and clean them up
-        const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-        
-        // Find the start of the table (look for 'Website' on its own line)
-        const websiteHeaderIndex = lines.findIndex(line => 
-          line.trim() === 'Website'
-        );
-        
-        if (websiteHeaderIndex === -1 || websiteHeaderIndex >= lines.length - 1) {
-          throw new Error('Could not find report table in PDF');
-        }
-
-        // Get the data rows (skip the header lines and any separator lines)
-        const dataLines = lines.slice(websiteHeaderIndex + 2).filter(line => 
-          !line.includes('---') &&  // Skip separator lines
-          line.trim() !== '' &&     // Skip empty lines
-          !line.includes('Live') && // Skip the header line with Live/Functional/Issue/Notes
-          !line.includes('Functional') &&
-          !line.includes('Issue') &&
-          !line.includes('Notes')
-        );
-
-        // Parse each data row
-        const parsedData = [];
-        for (let i = 0; i < dataLines.length; i += 2) {
-          // Get website name from current line and URL from next line
-          const websiteName = dataLines[i].trim();
-          const nextLine = dataLines[i + 1]?.trim() || '';
-          
-          // Extract URL if it exists in the next line
-          let websiteUrl = '';
-          if (nextLine.startsWith('http')) {
-            websiteUrl = nextLine;
-          }
-          
-          // The rest of the columns are on the same line as the URL or the line after
-          const dataLine = websiteUrl ? (dataLines[i + 2]?.trim() || '') : nextLine;
-          const columns = dataLine.split(/\s{2,}/).filter(col => col.trim() !== '');
-          
-          // If we couldn't find columns, try the next line
-          if (columns.length < 3 && dataLines[i + 3]) {
-            const nextDataLine = dataLines[i + 3].trim();
-            if (nextDataLine) {
-              const nextColumns = nextDataLine.split(/\s{2,}/).filter(col => col.trim() !== '');
-              if (nextColumns.length >= 3) {
-                columns.push(...nextColumns);
-                i++; // Skip the next line as we've used it
-              }
-            }
-          }
-          
-          // Get status values - handle different formats like "Live: Yes" or just "Yes"
-          const getStatusValue = (col: string) => {
-            if (!col) return false;
-            // Handle both "Live: Yes" and "Yes" formats
-            const parts = col.split(':');
-            const value = parts.length > 1 ? parts[1].trim() : parts[0].trim();
-            return value.toLowerCase() === 'yes';
-          };
-          
-          const isLive = getStatusValue(columns[0]);
-          const isFunctional = getStatusValue(columns[1]);
-          const hasProblem = getStatusValue(columns[2]);
-          
-          // Notes might contain spaces, so we take the rest of the columns
-          // Skip the first 3 columns (Live, Functional, Issue) and join the rest
-          const notes = columns.slice(3).join(' ').trim();
-
-          // Only add the entry if we have a valid website name
-          if (websiteName && websiteName !== 'Website') {
-            parsedData.push({
-              id: Date.now() + i,
-              website_name: websiteName,
-              website_url: websiteUrl || `https://${websiteName.toLowerCase().replace(/\s+/g, '')}.com`,
-              is_live: isLive,
-              is_functional: isFunctional,
-              has_problem: hasProblem,
-              notes: notes || '-',
-              created_at: new Date().toISOString(),
-            });
-            
-            // If we found a URL in the next line, skip it in the next iteration
-            if (websiteUrl) i++;
-          }
-        }
-
-        // If no data was parsed, add a default entry
-        if (parsedData.length === 0) {
-          parsedData.push({
-            id: Date.now(),
-            website_name: 'Uploaded Report',
-            website_url: 'https://example.com',
-            is_live: true,
-            is_functional: true,
-            has_problem: false,
-            notes: 'No data could be extracted from the PDF',
-            created_at: new Date().toISOString(),
-          });
-        }
-
-        // Initialize fixes for the uploaded data
-        const newFixes: Record<number, any> = {};
-        parsedData.forEach(item => {
-          newFixes[item.id] = {
-            daily_check_id: item.id,
-            fix_notes: '',
-            fixed_by: currentUser,
-            status: 'pending',
-          };
-        });
-
-        setReportData(parsedData);
-        setFixes(newFixes);
-        setSelectedDate(new Date());
-
-        toast({
-          title: 'Success',
-          description: `Processed ${parsedData.length} entries from PDF`,
-        });
-      } catch (error) {
-        console.error('Error processing PDF:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to process PDF content. Please check the format and try again.',
-          variant: 'destructive',
-        });
-      } finally {
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        setIsUploading(false);
-      }
-    };
-
-    reader.onerror = () => {
-      toast({
-        title: 'Error',
-        description: 'Failed to read PDF file',
-        variant: 'destructive',
-      });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setIsUploading(false);
-    };
-
-    // Start reading the file
-    reader.readAsArrayBuffer(file);
-  } catch (error) {
-    console.error('Error processing PDF:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to process PDF',
-      variant: 'destructive',
-    });
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    setIsUploading(false);
-  }
-};
 
   const loadReport = async () => {
     if (!selectedDate) {
@@ -379,84 +182,41 @@ const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Load Report from Date</CardTitle>
-            <CardDescription>Select a date to load the report for patching</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col space-y-4">
-              <div className="flex-1">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start text-left font-normal"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {selectedDate ? format(selectedDate, 'PPP') : <span>Pick a date</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <Button 
-                onClick={loadReport} 
-                disabled={!selectedDate || isLoading}
-                className="w-full"
-              >
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Load Report
-              </Button>
+      <Card>
+        <CardHeader>
+          <CardTitle>Load Report</CardTitle>
+          <CardDescription>Select a date to load the report for patching</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, 'PPP') : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Upload Report</CardTitle>
-            <CardDescription>Upload a PDF report to patch</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center space-y-4 p-4 border-2 border-dashed rounded-lg">
-              <Upload className="h-8 w-8 text-muted-foreground" />
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground mb-2">Drag and drop your PDF here, or click to browse</p>
-                <Button 
-                  variant="outline" 
-                  disabled={isUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    'Select PDF File'
-                  )}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">Supports PDF files only</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Button onClick={loadReport} disabled={!selectedDate || isLoading}>
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Load Report
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {reportData.length > 0 && (
         <Card>
