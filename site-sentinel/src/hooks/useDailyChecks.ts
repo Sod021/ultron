@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export interface DailyCheck {
@@ -19,17 +18,31 @@ export const useDailyChecks = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  const storageKey = 'sentinel:dailyChecks';
+
+  const loadFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? (JSON.parse(raw) as DailyCheck[]) : [];
+      const next = Array.isArray(parsed) ? parsed : [];
+      setDailyChecks(next);
+      return next;
+    } catch (error) {
+      console.error('Error loading checks from storage:', error);
+      setDailyChecks([]);
+      return [];
+    }
+  };
+
+  const saveToStorage = (next: DailyCheck[]) => {
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
   // Fetch all daily checks
   const fetchDailyChecks = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('daily_checks')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setDailyChecks(data || []);
+      loadFromStorage();
     } catch (error) {
       console.error('Error fetching daily checks:', error);
       toast({
@@ -45,15 +58,16 @@ export const useDailyChecks = () => {
   // Add a new daily check
   const addDailyCheck = async (check: Omit<DailyCheck, 'id' | 'created_at'>) => {
     try {
-      const { data, error } = await supabase
-        .from('daily_checks')
-        .insert([check])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setDailyChecks(prev => [data, ...prev]);
+      const data: DailyCheck = {
+        id: Date.now(),
+        created_at: new Date().toISOString(),
+        ...check,
+      };
+      setDailyChecks(prev => {
+        const next = [data, ...prev];
+        saveToStorage(next);
+        return next;
+      });
       return data;
     } catch (error) {
       console.error('Error adding daily check:', error);
@@ -71,19 +85,16 @@ export const useDailyChecks = () => {
     try {
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const { data, error } = await supabase
-        .from('daily_checks')
-        .select('*')
-        .gte('created_at', startOfDay.toISOString())
-        .lte('created_at', endOfDay.toISOString())
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      return data || [];
+      const source = loadFromStorage();
+      const data = source.filter(check => {
+        const createdAt = new Date(check.created_at);
+        return createdAt >= startOfDay && createdAt <= endOfDay;
+      });
+      return data;
     } catch (error) {
       console.error('Error fetching checks by date:', error);
       toast({
@@ -98,14 +109,11 @@ export const useDailyChecks = () => {
   // Delete a daily check
   const deleteDailyCheck = async (id: number) => {
     try {
-      const { error } = await supabase
-        .from('daily_checks')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setDailyChecks(prev => prev.filter(c => c.id !== id));
+      setDailyChecks(prev => {
+        const next = prev.filter(c => c.id !== id);
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'Check deleted successfully',
@@ -123,14 +131,11 @@ export const useDailyChecks = () => {
   // Clear all daily checks
   const clearAllChecks = async () => {
     try {
-      const { error } = await supabase
-        .from('daily_checks')
-        .delete()
-        .neq('id', 0); // Delete all records
-
-      if (error) throw error;
-
-      setDailyChecks([]);
+      setDailyChecks(() => {
+        const next: DailyCheck[] = [];
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'All reports have been cleared',

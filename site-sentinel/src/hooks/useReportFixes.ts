@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export interface ReportFix {
@@ -16,20 +15,27 @@ export interface ReportFix {
 export const useReportFixes = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const storageKey = 'sentinel:reportFixes';
+
+  const loadFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? (JSON.parse(raw) as ReportFix[]) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('Error loading report fixes from storage:', error);
+      return [];
+    }
+  };
+
+  const saveToStorage = (next: ReportFix[]) => {
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
 
   const getFixesByCheckId = useCallback(async (checkId: number): Promise<ReportFix | null> => {
     try {
-      const { data, error } = await supabase
-        .from('report_fixes')
-        .select('*')
-        .eq('daily_check_id', checkId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-        throw error;
-      }
-
-      return data || null;
+      const fixes = loadFromStorage();
+      return fixes.find(fix => fix.daily_check_id === checkId) || null;
     } catch (error) {
       console.error('Error fetching report fix:', error);
       toast({
@@ -44,41 +50,34 @@ export const useReportFixes = () => {
   const saveFix = useCallback(async (fix: Omit<ReportFix, 'id' | 'created_at' | 'updated_at'>): Promise<ReportFix | null> => {
     setIsLoading(true);
     try {
-      // Check if a fix already exists for this check
-      const { data: existing } = await supabase
-        .from('report_fixes')
-        .select('id')
-        .eq('daily_check_id', fix.daily_check_id)
-        .maybeSingle();
+      const fixes = loadFromStorage();
+      const now = new Date().toISOString();
+      const existingIndex = fixes.findIndex(f => f.daily_check_id === fix.daily_check_id);
+      let data: ReportFix;
 
-      let data, error;
-      
-      if (existing) {
-        // Update existing fix
-        ({ data, error } = await supabase
-          .from('report_fixes')
-          .update({
-            fix_notes: fix.fix_notes,
-            fixed_by: fix.fixed_by,
-            status: fix.status,
-            fixed_at: new Date().toISOString()
-          })
-          .eq('daily_check_id', fix.daily_check_id)
-          .select()
-          .single());
+      if (existingIndex >= 0) {
+        const existing = fixes[existingIndex];
+        data = {
+          ...existing,
+          fix_notes: fix.fix_notes,
+          fixed_by: fix.fixed_by,
+          status: fix.status,
+          fixed_at: now,
+          updated_at: now,
+        };
+        fixes[existingIndex] = data;
       } else {
-        // Create new fix
-        ({ data, error } = await supabase
-          .from('report_fixes')
-          .insert([{
-            ...fix,
-            fixed_at: new Date().toISOString()
-          }])
-          .select()
-          .single());
+        data = {
+          id: Date.now(),
+          created_at: now,
+          updated_at: now,
+          fixed_at: now,
+          ...fix,
+        };
+        fixes.unshift(data);
       }
 
-      if (error) throw error;
+      saveToStorage(fixes);
 
       toast({
         title: 'Success',
@@ -101,12 +100,9 @@ export const useReportFixes = () => {
 
   const deleteFix = useCallback(async (checkId: number): Promise<boolean> => {
     try {
-      const { error } = await supabase
-        .from('report_fixes')
-        .delete()
-        .eq('daily_check_id', checkId);
-
-      if (error) throw error;
+      const fixes = loadFromStorage();
+      const next = fixes.filter(fix => fix.daily_check_id !== checkId);
+      saveToStorage(next);
 
       toast({
         title: 'Success',

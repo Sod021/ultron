@@ -58,7 +58,7 @@ const Sentinel = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [currentCheckIndex, setCurrentCheckIndex] = useState(0);
   const [checkComplete, setCheckComplete] = useState(false);
-  const [activeTab, setActiveTab] = useState("reports");
+  const [activeTab, setActiveTab] = useState("dashboard");
   const reportRef = useRef<HTMLDivElement>(null);
   
   const [websiteName, setWebsiteName] = useState("");
@@ -111,19 +111,72 @@ const Sentinel = () => {
   const [reportData, setReportData] = useState<DailyCheck[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
 
+  const parseCSV = (raw: string): string[][] => {
+    // Minimal CSV parser with quoted field support.
+    const text = raw.replace(/^\uFEFF/, '');
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (inQuotes) {
+        if (char === '"') {
+          if (text[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          field += char;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        row.push(field);
+        field = '';
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && text[i + 1] === '\n') i++;
+        row.push(field);
+        field = '';
+        if (row.some(cell => cell.trim() !== '')) {
+          rows.push(row);
+        }
+        row = [];
+      } else {
+        field += char;
+      }
+    }
+
+    if (field.length > 0 || row.length > 0) {
+      row.push(field);
+      if (row.some(cell => cell.trim() !== '')) {
+        rows.push(row);
+      }
+    }
+
+    return rows;
+  };
+
   const handleCSVImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
       const text = await file.text();
-      const lines = text.split('\n').filter(line => line.trim() !== '');
+      const rows = parseCSV(text);
       
-      if (lines.length < 2) {
+      if (rows.length < 2) {
         throw new Error('CSV file is empty or has no data rows');
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const headers = rows[0].map(h => h.trim().toLowerCase());
       
       if (!headers.includes('name') || !headers.includes('url')) {
         throw new Error('CSV must include "name" and "url" columns');
@@ -135,8 +188,8 @@ const Sentinel = () => {
       const newUrls = new Set<string>();
       const duplicateUrls = new Set<string>();
 
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
+      for (let i = 1; i < rows.length; i++) {
+        const values = rows[i].map(v => v.trim());
         const website: Partial<Website> = {};
         
         headers.forEach((header, index) => {

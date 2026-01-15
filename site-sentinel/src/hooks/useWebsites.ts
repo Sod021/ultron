@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export interface Website {
@@ -14,17 +13,31 @@ export const useWebsites = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  const storageKey = 'sentinel:websites';
+
+  const loadFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? (JSON.parse(raw) as Website[]) : [];
+      const next = Array.isArray(parsed) ? parsed : [];
+      setWebsites(next);
+      return next;
+    } catch (error) {
+      console.error('Error loading websites from storage:', error);
+      setWebsites([]);
+      return [];
+    }
+  };
+
+  const saveToStorage = (next: Website[]) => {
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
   // Fetch all websites
   const fetchWebsites = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('websites')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setWebsites(data || []);
+      loadFromStorage();
     } catch (error) {
       console.error('Error fetching websites:', error);
       toast({
@@ -40,15 +53,17 @@ export const useWebsites = () => {
   // Add a new website
   const addWebsite = async (name: string, url: string) => {
     try {
-      const { data, error } = await supabase
-        .from('websites')
-        .insert([{ name, url }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      
-      setWebsites(prev => [data, ...prev]);
+      const data: Website = {
+        id: Date.now(),
+        name,
+        url,
+        created_at: new Date().toISOString(),
+      };
+      setWebsites(prev => {
+        const next = [data, ...prev];
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'Website added successfully',
@@ -68,21 +83,21 @@ export const useWebsites = () => {
   // Update a website
   const updateWebsite = async (id: number, name: string, url: string) => {
     try {
-      const { data, error } = await supabase
-        .from('websites')
-        .update({ name, url })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setWebsites(prev => prev.map(w => w.id === id ? data : w));
+      let updated: Website | null = null;
+      setWebsites(prev => {
+        const next = prev.map(w => {
+          if (w.id !== id) return w;
+          updated = { ...w, name, url };
+          return updated;
+        });
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'Website updated successfully',
       });
-      return data;
+      return updated;
     } catch (error) {
       console.error('Error updating website:', error);
       toast({
@@ -97,14 +112,11 @@ export const useWebsites = () => {
   // Delete a website
   const deleteWebsite = async (id: number) => {
     try {
-      const { error } = await supabase
-        .from('websites')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setWebsites(prev => prev.filter(w => w.id !== id));
+      setWebsites(prev => {
+        const next = prev.filter(w => w.id !== id);
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'Website deleted successfully',
@@ -122,14 +134,17 @@ export const useWebsites = () => {
   // Bulk add websites (for CSV import)
   const bulkAddWebsites = async (websitesToAdd: { name: string; url: string }[]) => {
     try {
-      const { data, error } = await supabase
-        .from('websites')
-        .insert(websitesToAdd)
-        .select();
-
-      if (error) throw error;
-
-      setWebsites(prev => [...data, ...prev]);
+      const data: Website[] = websitesToAdd.map((site, index) => ({
+        id: Date.now() + index,
+        name: site.name,
+        url: site.url,
+        created_at: new Date().toISOString(),
+      }));
+      setWebsites(prev => {
+        const next = [...data, ...prev];
+        saveToStorage(next);
+        return next;
+      });
       return data;
     } catch (error) {
       console.error('Error bulk adding websites:', error);
@@ -140,14 +155,11 @@ export const useWebsites = () => {
   // Clear all websites
   const clearAllWebsites = async () => {
     try {
-      const { error } = await supabase
-        .from('websites')
-        .delete()
-        .neq('id', 0); // Delete all records
-
-      if (error) throw error;
-
-      setWebsites([]);
+      setWebsites(() => {
+        const next: Website[] = [];
+        saveToStorage(next);
+        return next;
+      });
       toast({
         title: 'Success',
         description: 'All websites have been cleared',
