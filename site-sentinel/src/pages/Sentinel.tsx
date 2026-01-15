@@ -9,9 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+import { useNavigate } from "react-router-dom";
 // Import jsPDF and autoTable
 import { jsPDF } from 'jspdf';
 import autoTable, { CellDef } from 'jspdf-autotable';
@@ -33,6 +35,7 @@ import { ReportPatcher } from "@/components/ReportPatcher";
 
 const Sentinel = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<{ email: string } | null>(null);
 
   const { 
@@ -746,6 +749,19 @@ const Sentinel = () => {
     { id: "report-patcher", label: "Report Patcher", icon: Wrench },
   ];
 
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({
+        title: "Sign out failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    navigate("/", { replace: true });
+  };
+
   return (
     <div className="min-h-screen bg-background flex">
       <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col">
@@ -771,6 +787,16 @@ const Sentinel = () => {
             ))}
           </ul>
         </nav>
+        <div className="border-t border-sidebar-border p-4">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            onClick={handleSignOut}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
       </aside>
 
       <main className="flex-1 p-8 overflow-auto">
