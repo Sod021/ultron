@@ -24,7 +24,7 @@ const Auth = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const confirmed = params.get("confirmed") === "1";
-    const recovery = params.get("type") === "recovery";
+    const recovery = params.get("type") === "recovery" || window.location.pathname === "/reset";
 
     if (confirmed) {
       toast({
