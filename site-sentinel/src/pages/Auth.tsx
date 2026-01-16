@@ -17,10 +17,14 @@ const Auth = () => {
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
+  const [isRecovery, setIsRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const confirmed = params.get("confirmed") === "1";
+    const recovery = params.get("type") === "recovery";
 
     if (confirmed) {
       toast({
@@ -33,6 +37,11 @@ const Auth = () => {
       window.history.replaceState({}, "", nextUrl);
     }
 
+    if (recovery) {
+      navigate("/reset", { replace: true });
+      return;
+    }
+
     const redirectIfAuthed = async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session && !confirmed) {
@@ -43,7 +52,7 @@ const Auth = () => {
     redirectIfAuthed();
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session && !confirmed) {
+      if (session && !confirmed && !recovery) {
         navigate("/app", { replace: true });
       }
     });
@@ -52,6 +61,56 @@ const Auth = () => {
       subscription.subscription.unsubscribe();
     };
   }, [navigate, toast]);
+
+  useEffect(() => {
+    if (window.location.pathname === "/reset") {
+      setIsRecovery(true);
+    }
+  }, []);
+
+  const handleRecoverySubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newPassword || newPassword.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "Use at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Passwords do not match",
+        description: "Make sure both fields match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      toast({
+        title: "Password updated",
+        description: "You can now log in with your new password.",
+      });
+      setIsRecovery(false);
+      setNewPassword("");
+      setConfirmPassword("");
+      navigate("/", { replace: true });
+    } catch (error) {
+      toast({
+        title: "Reset failed",
+        description: error instanceof Error ? error.message : "Unable to update password.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -122,7 +181,7 @@ const Auth = () => {
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(loginEmail.trim(), {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.origin}/reset`,
       });
       if (error) throw error;
 
@@ -157,13 +216,52 @@ const Auth = () => {
                 Site Sentinel
               </span>
               <CardTitle className="text-2xl text-slate-100" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>
-                Welcome back
+                {isRecovery ? "Set a new password" : "Welcome back"}
               </CardTitle>
               <CardDescription className="text-slate-400">
-                Sign in or create a new account to keep monitoring.
+                {isRecovery
+                  ? "Choose a new password to finish your reset."
+                  : "Sign in or create a new account to keep monitoring."}
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {isRecovery ? (
+                <form onSubmit={handleRecoverySubmit} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="reset-password" className="text-slate-200">New password</Label>
+                    <Input
+                      id="reset-password"
+                      type="password"
+                      placeholder="Enter a new password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                      autoComplete="new-password"
+                      required
+                      className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="reset-password-confirm" className="text-slate-200">Confirm password</Label>
+                    <Input
+                      id="reset-password-confirm"
+                      type="password"
+                      placeholder="Re-enter your new password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      autoComplete="new-password"
+                      required
+                      className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full bg-white text-slate-900 hover:bg-slate-100"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Updating..." : "Update password"}
+                  </Button>
+                </form>
+              ) : (
               <Tabs defaultValue="login" className="space-y-6">
                 <TabsList className="grid w-full grid-cols-2 bg-white/5 text-slate-300">
                   <TabsTrigger value="login" className="data-[state=active]:bg-white/10 data-[state=active]:text-white">
@@ -278,6 +376,7 @@ const Auth = () => {
                   </form>
                 </TabsContent>
               </Tabs>
+              )}
             </CardContent>
           </Card>
         </section>

@@ -18,6 +18,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Auth />} />
+          <Route path="/reset" element={<Auth />} />
           <Route path="/app" element={<Sentinel />} />
           <Route path="/auth" element={<Auth />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
