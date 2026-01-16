@@ -38,7 +38,6 @@ const Auth = () => {
     }
 
     if (recovery) {
-      navigate("/reset", { replace: true });
       return;
     }
 
@@ -64,6 +63,12 @@ const Auth = () => {
 
   useEffect(() => {
     if (window.location.pathname === "/reset") {
+      setIsRecovery(true);
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("type") === "recovery") {
       setIsRecovery(true);
     }
   }, []);
