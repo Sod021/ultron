@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 
 export interface ReportFix {
   id?: number;
@@ -15,27 +16,23 @@ export interface ReportFix {
 export const useReportFixes = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const storageKey = 'sentinel:reportFixes';
-
-  const loadFromStorage = () => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? (JSON.parse(raw) as ReportFix[]) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.error('Error loading report fixes from storage:', error);
-      return [];
-    }
-  };
-
-  const saveToStorage = (next: ReportFix[]) => {
-    localStorage.setItem(storageKey, JSON.stringify(next));
-  };
 
   const getFixesByCheckId = useCallback(async (checkId: number): Promise<ReportFix | null> => {
     try {
-      const fixes = loadFromStorage();
-      return fixes.find(fix => fix.daily_check_id === checkId) || null;
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        return null;
+      }
+
+      const { data, error } = await supabase
+        .from('report_fixes')
+        .select('*')
+        .eq('daily_check_id', checkId)
+        .eq('user_id', authData.user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      return (data as ReportFix) || null;
     } catch (error) {
       console.error('Error fetching report fix:', error);
       toast({
@@ -50,41 +47,33 @@ export const useReportFixes = () => {
   const saveFix = useCallback(async (fix: Omit<ReportFix, 'id' | 'created_at' | 'updated_at'>): Promise<ReportFix | null> => {
     setIsLoading(true);
     try {
-      const fixes = loadFromStorage();
       const now = new Date().toISOString();
-      const existingIndex = fixes.findIndex(f => f.daily_check_id === fix.daily_check_id);
-      let data: ReportFix;
-
-      if (existingIndex >= 0) {
-        const existing = fixes[existingIndex];
-        data = {
-          ...existing,
-          fix_notes: fix.fix_notes,
-          fixed_by: fix.fixed_by,
-          status: fix.status,
-          fixed_at: now,
-          updated_at: now,
-        };
-        fixes[existingIndex] = data;
-      } else {
-        data = {
-          id: Date.now(),
-          created_at: now,
-          updated_at: now,
-          fixed_at: now,
-          ...fix,
-        };
-        fixes.unshift(data);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error('You must be signed in to save a fix.');
       }
 
-      saveToStorage(fixes);
+      const payload = {
+        ...fix,
+        user_id: authData.user.id,
+        fixed_at: now,
+        updated_at: now,
+      };
+
+      const { data, error } = await supabase
+        .from('report_fixes')
+        .upsert(payload, { onConflict: 'daily_check_id' })
+        .select('*')
+        .single();
+
+      if (error) throw error;
 
       toast({
         title: 'Success',
         description: 'Report fix saved successfully',
       });
 
-      return data;
+      return data as ReportFix;
     } catch (error) {
       console.error('Error saving report fix:', error);
       toast({
@@ -100,9 +89,18 @@ export const useReportFixes = () => {
 
   const deleteFix = useCallback(async (checkId: number): Promise<boolean> => {
     try {
-      const fixes = loadFromStorage();
-      const next = fixes.filter(fix => fix.daily_check_id !== checkId);
-      saveToStorage(next);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error('You must be signed in to delete a fix.');
+      }
+
+      const { error } = await supabase
+        .from('report_fixes')
+        .delete()
+        .eq('daily_check_id', checkId)
+        .eq('user_id', authData.user.id);
+
+      if (error) throw error;
 
       toast({
         title: 'Success',

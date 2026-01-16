@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 
 export interface DailyCheck {
   id: number;
@@ -18,31 +19,24 @@ export const useDailyChecks = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const storageKey = 'sentinel:dailyChecks';
-
-  const loadFromStorage = () => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? (JSON.parse(raw) as DailyCheck[]) : [];
-      const next = Array.isArray(parsed) ? parsed : [];
-      setDailyChecks(next);
-      return next;
-    } catch (error) {
-      console.error('Error loading checks from storage:', error);
-      setDailyChecks([]);
-      return [];
-    }
-  };
-
-  const saveToStorage = (next: DailyCheck[]) => {
-    localStorage.setItem(storageKey, JSON.stringify(next));
-  };
-
   // Fetch all daily checks
   const fetchDailyChecks = async () => {
     setIsLoading(true);
     try {
-      loadFromStorage();
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setDailyChecks([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('daily_checks')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setDailyChecks(data || []);
     } catch (error) {
       console.error('Error fetching daily checks:', error);
       toast({
@@ -58,17 +52,23 @@ export const useDailyChecks = () => {
   // Add a new daily check
   const addDailyCheck = async (check: Omit<DailyCheck, 'id' | 'created_at'>) => {
     try {
-      const data: DailyCheck = {
-        id: Date.now(),
-        created_at: new Date().toISOString(),
-        ...check,
-      };
-      setDailyChecks(prev => {
-        const next = [data, ...prev];
-        saveToStorage(next);
-        return next;
-      });
-      return data;
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error('You must be signed in to save a check.');
+      }
+
+      const { data, error } = await supabase
+        .from('daily_checks')
+        .insert({
+          ...check,
+          user_id: authData.user.id,
+        })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      setDailyChecks(prev => [data as DailyCheck, ...prev]);
+      return data as DailyCheck;
     } catch (error) {
       console.error('Error adding daily check:', error);
       toast({
@@ -83,18 +83,26 @@ export const useDailyChecks = () => {
   // Get checks by date range
   const getChecksByDate = async (date: string) => {
     try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        return [];
+      }
+
       const startOfDay = new Date(date);
       startOfDay.setHours(0, 0, 0, 0);
-
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const source = loadFromStorage();
-      const data = source.filter(check => {
-        const createdAt = new Date(check.created_at);
-        return createdAt >= startOfDay && createdAt <= endOfDay;
-      });
-      return data;
+      const { data, error } = await supabase
+        .from('daily_checks')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .gte('created_at', startOfDay.toISOString())
+        .lte('created_at', endOfDay.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
     } catch (error) {
       console.error('Error fetching checks by date:', error);
       toast({
@@ -109,11 +117,9 @@ export const useDailyChecks = () => {
   // Delete a daily check
   const deleteDailyCheck = async (id: number) => {
     try {
-      setDailyChecks(prev => {
-        const next = prev.filter(c => c.id !== id);
-        saveToStorage(next);
-        return next;
-      });
+      const { error } = await supabase.from('daily_checks').delete().eq('id', id);
+      if (error) throw error;
+      setDailyChecks(prev => prev.filter(c => c.id !== id));
       toast({
         title: 'Success',
         description: 'Check deleted successfully',
@@ -131,11 +137,14 @@ export const useDailyChecks = () => {
   // Clear all daily checks
   const clearAllChecks = async () => {
     try {
-      setDailyChecks(() => {
-        const next: DailyCheck[] = [];
-        saveToStorage(next);
-        return next;
-      });
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error('You must be signed in to clear reports.');
+      }
+
+      const { error } = await supabase.from('daily_checks').delete().eq('user_id', authData.user.id);
+      if (error) throw error;
+      setDailyChecks([]);
       toast({
         title: 'Success',
         description: 'All reports have been cleared',

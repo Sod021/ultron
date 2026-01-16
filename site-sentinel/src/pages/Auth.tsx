@@ -19,9 +19,23 @@ const Auth = () => {
   const [signupPassword, setSignupPassword] = useState("");
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const confirmed = params.get("confirmed") === "1";
+
+    if (confirmed) {
+      toast({
+        title: "Account confirmed",
+        description: "Your account is ready. Please log in with your credentials.",
+      });
+      supabase.auth.signOut();
+      params.delete("confirmed");
+      const nextUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
+
     const redirectIfAuthed = async () => {
       const { data } = await supabase.auth.getSession();
-      if (data.session) {
+      if (data.session && !confirmed) {
         navigate("/app", { replace: true });
       }
     };
@@ -29,7 +43,7 @@ const Auth = () => {
     redirectIfAuthed();
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
+      if (session && !confirmed) {
         navigate("/app", { replace: true });
       }
     });
@@ -37,7 +51,7 @@ const Auth = () => {
     return () => {
       subscription.subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, toast]);
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -74,6 +88,7 @@ const Auth = () => {
           data: {
             full_name: signupName.trim(),
           },
+          emailRedirectTo: `${window.location.origin}/?confirmed=1`,
         },
       });
 
@@ -81,7 +96,7 @@ const Auth = () => {
 
       toast({
         title: "Account created",
-        description: "Check your email to confirm your account.",
+        description: "Check your email to confirm your account, then log in.",
       });
     } catch (error) {
       toast({
