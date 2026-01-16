@@ -788,10 +788,10 @@ const Sentinel = () => {
 
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "report-patcher", label: "Report Patcher", icon: Wrench },
-    { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
   ];
 
   const handleSignOut = async () => {
@@ -809,7 +809,7 @@ const Sentinel = () => {
 
   return (
     <div className="min-h-screen bg-background flex">
-      <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col">
+      <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col sticky top-0 h-screen">
         <div className="p-6 border-b border-sidebar-border">
           <h1 className="text-2xl font-bold text-sidebar-foreground">Sentinel</h1>
           <p className="text-sm text-sidebar-foreground/70 mt-1">Website Monitor</p>
