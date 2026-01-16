@@ -31,6 +31,7 @@ import {
 
 import { useWebsites, type Website } from "@/hooks/useWebsites";
 import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
+import { useAutoChecks, type AutoCheck } from "@/hooks/useAutoChecks";
 import { ReportPatcher } from "@/components/ReportPatcher";
 
 const Sentinel = () => {
@@ -102,6 +103,22 @@ const Sentinel = () => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
   const [showAllWebsites, setShowAllWebsites] = useState(false);
+  const [autoFilter, setAutoFilter] = useState("all");
+
+  const { autoChecks, isLoading: autoChecksLoading, runAutoChecksNow, fetchAutoChecks } = useAutoChecks();
+  const autoLastRun = autoChecks[0]?.checked_at;
+  const filteredAutoChecks =
+    autoFilter === "all"
+      ? autoChecks
+      : autoChecks.filter(check => check.error_type === autoFilter);
+  const autoIssues = autoChecks.filter(check => !check.is_live);
+  const autoLiveCount = autoChecks.filter(check => check.is_live).length;
+  const autoErrorCounts = autoChecks.reduce<Record<string, number>>((acc, check) => {
+    if (!check.is_live) {
+      acc[check.error_type] = (acc[check.error_type] || 0) + 1;
+    }
+    return acc;
+  }, {});
   
   // Combined loading state for UI display
   const [isLoading, setIsLoading] = useState({
@@ -772,6 +789,7 @@ const Sentinel = () => {
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "report-patcher", label: "Report Patcher", icon: Wrench },
+    { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
   ];
 
   const handleSignOut = async () => {
@@ -1240,6 +1258,195 @@ const Sentinel = () => {
               <div className="space-y-6">
                 <h2 className="text-3xl font-bold text-foreground">Report Patcher</h2>
                 <ReportPatcher currentUser={currentUser?.email || 'System'} />
+              </div>
+            )}
+
+            {activeTab === "auto-checks" && (
+              <div className="space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-3xl font-bold text-foreground">Automated Checks</h2>
+                    <p className="text-muted-foreground">
+                      Scheduled website health checks with instant visibility on issues.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={runAutoChecksNow} disabled={autoChecksLoading}>
+                      {autoChecksLoading ? "Running..." : "Run Check Now"}
+                    </Button>
+                    <Button variant="secondary" onClick={fetchAutoChecks} disabled={autoChecksLoading}>
+                      Refresh
+                    </Button>
+                    <Button variant="secondary" disabled>
+                      Schedule: Daily at 8:00 AM
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Card>
+                    <CardHeader className="space-y-1">
+                      <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                        Total Sites Checked
+                      </CardTitle>
+                      <CardDescription className="text-xs leading-relaxed">
+                        {autoLastRun ? `Last run: ${format(new Date(autoLastRun), "PPpp")}` : "Latest automated run"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-3xl font-bold">{autoChecks.length}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="space-y-1">
+                      <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                        Live
+                      </CardTitle>
+                      <CardDescription className="text-xs leading-relaxed">Sites responding normally</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-3xl font-bold text-green-500">{autoLiveCount}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="space-y-1">
+                      <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                        Issues
+                      </CardTitle>
+                      <CardDescription className="text-xs leading-relaxed">Sites needing attention</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-3xl font-bold text-amber-500">{autoIssues.length}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="space-y-1">
+                      <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                        Errors Detected
+                      </CardTitle>
+                      <CardDescription className="text-xs leading-relaxed">By status class</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground">
+                        500s: {autoErrorCounts["500"] || 0}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        403s: {autoErrorCounts["403"] || 0}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Timeouts: {autoErrorCounts["timeout"] || 0}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                        Issues
+                      </CardTitle>
+                      <CardDescription>Only websites with problems</CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "500", label: "500" },
+                        { id: "403", label: "403" },
+                        { id: "timeout", label: "Timeout" },
+                        { id: "dns", label: "DNS" },
+                      ].map((filter) => (
+                        <Button
+                          key={filter.id}
+                          variant={autoFilter === filter.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setAutoFilter(filter.id)}
+                        >
+                          {filter.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {autoChecksLoading ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        Loading automated checks...
+                      </div>
+                    ) : filteredAutoChecks.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        No automated issues yet. Once checks run, problem sites will appear here.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-muted/50 text-left">
+                              <th className="border p-2">Website</th>
+                              <th className="border p-2">Status</th>
+                              <th className="border p-2">Error Type</th>
+                              <th className="border p-2">Response</th>
+                              <th className="border p-2">Last Checked</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredAutoChecks.map((check) => (
+                              <tr key={check.id} className="border-b">
+                                <td className="border p-2">
+                                  <div className="font-medium">{check.website_name}</div>
+                                  <div className="text-xs text-muted-foreground">{check.website_url}</div>
+                                </td>
+                                <td className="border p-2">
+                                  {check.status_code ?? "N/A"}
+                                </td>
+                                <td className="border p-2">{check.error_type}</td>
+                                <td className="border p-2">
+                                  {check.response_time_ms ? `${check.response_time_ms}ms` : "-"}
+                                </td>
+                                <td className="border p-2">
+                                  {format(new Date(check.checked_at), "PPpp")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-[18px] font-semibold leading-snug text-foreground">
+                      Recent Automated Runs
+                    </CardTitle>
+                    <CardDescription>Latest checks, including successful ones</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {autoChecksLoading ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        Loading automated checks...
+                      </div>
+                    ) : autoChecks.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        Automated checks will show up here once the scheduler runs.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {autoChecks.slice(0, 10).map((check) => (
+                          <div key={check.id} className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                              <div className="font-medium">{check.website_name}</div>
+                              <div className="text-xs text-muted-foreground">{check.website_url}</div>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {check.status_code ?? "N/A"} • {check.response_time_ms ? `${check.response_time_ms}ms` : "-"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
 
