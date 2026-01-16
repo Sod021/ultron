@@ -37,18 +37,15 @@ const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<{ email: string } | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
     const syncUser = async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) {
         navigate("/", { replace: true });
-        setIsAuthReady(true);
         return;
       }
       setCurrentUser({ email: data.user.email || "User" });
-      setIsAuthReady(true);
     };
 
     syncUser();
@@ -56,28 +53,15 @@ const Sentinel = () => {
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
         navigate("/", { replace: true });
-        setIsAuthReady(true);
         return;
       }
       setCurrentUser({ email: session.user.email || "User" });
-      setIsAuthReady(true);
     });
 
     return () => {
       subscription.subscription.unsubscribe();
     };
   }, [navigate]);
-
-  if (!isAuthReady) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex items-center gap-3 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span>Loading dashboard...</span>
-        </div>
-      </div>
-    );
-  }
 
   const { 
     websites, 
