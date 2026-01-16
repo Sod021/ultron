@@ -110,8 +110,8 @@ All colors MUST be HSL.
   select:-webkit-autofill:hover,
   select:-webkit-autofill:focus {
     -webkit-text-fill-color: hsl(var(--foreground));
-    -webkit-box-shadow: 0 0 0px 1000px hsl(var(--input)) inset;
-    box-shadow: 0 0 0px 1000px hsl(var(--input)) inset;
+    -webkit-box-shadow: 0 0 0px 1000px #1c2227 inset;
+    box-shadow: 0 0 0px 1000px #1c2227 inset;
     transition: background-color 9999s ease-in-out 0s;
   }
 }
