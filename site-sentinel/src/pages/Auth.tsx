@@ -100,8 +100,9 @@ const Auth = () => {
 
       toast({
         title: "Password updated",
-        description: "You can now log in with your new password.",
+        description: "Log in again with your new password.",
       });
+      await supabase.auth.signOut();
       setIsRecovery(false);
       setNewPassword("");
       setConfirmPassword("");
