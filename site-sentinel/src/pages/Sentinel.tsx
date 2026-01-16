@@ -110,7 +110,9 @@ const Sentinel = () => {
   const filteredAutoChecks =
     autoFilter === "all"
       ? autoChecks
-      : autoChecks.filter(check => check.error_type === autoFilter);
+      : autoFilter === "not-live"
+        ? autoChecks.filter(check => !check.is_live)
+        : autoChecks.filter(check => check.error_type === autoFilter);
   const autoIssues = autoChecks.filter(check => !check.is_live);
   const autoLiveCount = autoChecks.filter(check => check.is_live).length;
   const autoErrorCounts = autoChecks.reduce<Record<string, number>>((acc, check) => {
@@ -1351,6 +1353,7 @@ const Sentinel = () => {
                     <div className="flex flex-wrap gap-2">
                       {[
                         { id: "all", label: "All" },
+                        { id: "not-live", label: "Not Live" },
                         { id: "500", label: "500" },
                         { id: "403", label: "403" },
                         { id: "timeout", label: "Timeout" },
