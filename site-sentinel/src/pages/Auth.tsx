@@ -207,24 +207,24 @@ const Auth = () => {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0b1117] text-slate-100">
+    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-24 top-12 h-64 w-64 rounded-full bg-[#1a2b3a] blur-3xl" />
-        <div className="absolute right-[-140px] top-32 h-80 w-80 rounded-full bg-[#0f2f3c] blur-3xl" />
-        <div className="absolute bottom-[-140px] left-1/3 h-72 w-72 rounded-full bg-[#13222d] blur-3xl" />
+        <div className="absolute -left-24 top-12 h-64 w-64 rounded-full bg-accent/40 blur-3xl" />
+        <div className="absolute right-[-140px] top-32 h-80 w-80 rounded-full bg-secondary/40 blur-3xl" />
+        <div className="absolute bottom-[-140px] left-1/3 h-72 w-72 rounded-full bg-muted/40 blur-3xl" />
       </div>
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center justify-center px-6 py-12">
         <section className="flex w-full items-center justify-center">
-          <Card className="w-full max-w-md border-white/10 bg-[#11161c]/90 shadow-xl backdrop-blur">
+          <Card className="w-full max-w-md border-border/60 bg-card/70 shadow-xl backdrop-blur-xl">
             <CardHeader className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 Site Sentinel
               </span>
-              <CardTitle className="text-2xl text-slate-100" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>
+              <CardTitle className="text-2xl text-foreground" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>
                 {isRecovery ? "Set a new password" : "Welcome back"}
               </CardTitle>
-              <CardDescription className="text-slate-400">
+              <CardDescription className="text-muted-foreground">
                 {isRecovery
                   ? "Choose a new password to finish your reset."
                   : "Sign in or create a new account to keep monitoring."}
@@ -234,7 +234,7 @@ const Auth = () => {
               {isRecovery ? (
                 <form onSubmit={handleRecoverySubmit} className="space-y-5">
                   <div className="space-y-2">
-                    <Label htmlFor="reset-password" className="text-slate-200">New password</Label>
+                    <Label htmlFor="reset-password" className="text-foreground">New password</Label>
                     <Input
                       id="reset-password"
                       type="password"
@@ -243,11 +243,11 @@ const Auth = () => {
                       onChange={(event) => setNewPassword(event.target.value)}
                       autoComplete="new-password"
                       required
-                      className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="reset-password-confirm" className="text-slate-200">Confirm password</Label>
+                    <Label htmlFor="reset-password-confirm" className="text-foreground">Confirm password</Label>
                     <Input
                       id="reset-password-confirm"
                       type="password"
@@ -256,12 +256,12 @@ const Auth = () => {
                       onChange={(event) => setConfirmPassword(event.target.value)}
                       autoComplete="new-password"
                       required
-                      className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                   <Button
                     type="submit"
-                    className="w-full bg-white text-slate-900 hover:bg-slate-100"
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                     disabled={isLoading}
                   >
                     {isLoading ? "Updating..." : "Update password"}
@@ -269,11 +269,11 @@ const Auth = () => {
                 </form>
               ) : (
               <Tabs defaultValue="login" className="space-y-6">
-                <TabsList className="grid w-full grid-cols-2 bg-white/5 text-slate-300">
-                  <TabsTrigger value="login" className="data-[state=active]:bg-white/10 data-[state=active]:text-white">
+                <TabsList className="grid w-full grid-cols-2 bg-card/40 text-muted-foreground">
+                  <TabsTrigger value="login" className="data-[state=active]:bg-card/70 data-[state=active]:text-foreground">
                     Log in
                   </TabsTrigger>
-                  <TabsTrigger value="signup" className="data-[state=active]:bg-white/10 data-[state=active]:text-white">
+                  <TabsTrigger value="signup" className="data-[state=active]:bg-card/70 data-[state=active]:text-foreground">
                     Sign up
                   </TabsTrigger>
                 </TabsList>
@@ -281,105 +281,105 @@ const Auth = () => {
                 <TabsContent value="login" className="space-y-5">
                   <form onSubmit={handleLogin} className="space-y-5">
                     <div className="space-y-2">
-                      <Label htmlFor="login-email" className="text-slate-200">Email</Label>
-                      <Input
-                        id="login-email"
-                        type="email"
-                        placeholder="you@agency.com"
-                        value={loginEmail}
-                        onChange={(event) => setLoginEmail(event.target.value)}
-                        autoComplete="email"
-                        required
-                        className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="login-password" className="text-slate-200">Password</Label>
-                      <Input
-                        id="login-password"
-                        type="password"
-                        placeholder="Enter your password"
-                        value={loginPassword}
-                        onChange={(event) => setLoginPassword(event.target.value)}
-                        autoComplete="current-password"
-                        required
-                        className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <button
-                        type="button"
-                        className="font-semibold text-slate-200 hover:text-white"
-                        onClick={handlePasswordReset}
-                        disabled={isLoading}
-                      >
-                        Forgot password?
-                      </button>
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full bg-white text-slate-900 hover:bg-slate-100"
+                    <Label htmlFor="login-email" className="text-foreground">Email</Label>
+                    <Input
+                      id="login-email"
+                      type="email"
+                      placeholder="you@agency.com"
+                      value={loginEmail}
+                      onChange={(event) => setLoginEmail(event.target.value)}
+                      autoComplete="email"
+                      required
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-password" className="text-foreground">Password</Label>
+                    <Input
+                      id="login-password"
+                      type="password"
+                      placeholder="Enter your password"
+                      value={loginPassword}
+                      onChange={(event) => setLoginPassword(event.target.value)}
+                      autoComplete="current-password"
+                      required
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      className="font-semibold text-foreground hover:text-foreground"
+                      onClick={handlePasswordReset}
                       disabled={isLoading}
                     >
-                      {isLoading ? "Signing in..." : "Log in"}
-                    </Button>
-                    <p className="text-center text-xs text-slate-400">
-                      By continuing you agree to the Site Sentinel terms.
-                    </p>
-                  </form>
-                </TabsContent>
+                      Forgot password?
+                    </button>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Signing in..." : "Log in"}
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    By continuing you agree to the Site Sentinel terms.
+                  </p>
+                </form>
+              </TabsContent>
 
                 <TabsContent value="signup" className="space-y-5">
                   <form onSubmit={handleSignup} className="space-y-5">
                     <div className="space-y-2">
-                      <Label htmlFor="signup-name" className="text-slate-200">Full name</Label>
-                      <Input
-                        id="signup-name"
-                        placeholder="Alex Morgan"
-                        value={signupName}
-                        onChange={(event) => setSignupName(event.target.value)}
-                        autoComplete="name"
-                        required
-                        className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email" className="text-slate-200">Work email</Label>
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        placeholder="alex@studio.com"
-                        value={signupEmail}
-                        onChange={(event) => setSignupEmail(event.target.value)}
-                        autoComplete="email"
-                        required
-                        className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password" className="text-slate-200">Create password</Label>
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="Create a secure password"
-                        value={signupPassword}
-                        onChange={(event) => setSignupPassword(event.target.value)}
-                        autoComplete="new-password"
-                        required
-                        className="border-white/10 bg-white/5 text-slate-100 placeholder:text-slate-500"
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full bg-white text-slate-900 hover:bg-slate-100"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? "Creating..." : "Create account"}
-                    </Button>
-                    <p className="text-center text-xs text-slate-400">
-                      Already have an account? Switch to Log in above.
-                    </p>
-                  </form>
+                    <Label htmlFor="signup-name" className="text-foreground">Full name</Label>
+                    <Input
+                      id="signup-name"
+                      placeholder="Alex Morgan"
+                      value={signupName}
+                      onChange={(event) => setSignupName(event.target.value)}
+                      autoComplete="name"
+                      required
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email" className="text-foreground">Work email</Label>
+                    <Input
+                      id="signup-email"
+                      type="email"
+                      placeholder="alex@studio.com"
+                      value={signupEmail}
+                      onChange={(event) => setSignupEmail(event.target.value)}
+                      autoComplete="email"
+                      required
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password" className="text-foreground">Create password</Label>
+                    <Input
+                      id="signup-password"
+                      type="password"
+                      placeholder="Create a secure password"
+                      value={signupPassword}
+                      onChange={(event) => setSignupPassword(event.target.value)}
+                      autoComplete="new-password"
+                      required
+                      className="border-border/60 bg-card/40 text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Creating..." : "Create account"}
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    Already have an account? Switch to Log in above.
+                  </p>
+                </form>
                 </TabsContent>
               </Tabs>
               )}

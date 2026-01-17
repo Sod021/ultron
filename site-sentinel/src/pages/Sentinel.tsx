@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -89,6 +89,18 @@ const Sentinel = () => {
   const [checkComplete, setCheckComplete] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const reportRef = useRef<HTMLDivElement>(null);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    const storedTheme = localStorage.getItem("sentinel-theme");
+    const nextTheme = storedTheme ? storedTheme === "dark" : true;
+    setIsDarkMode(nextTheme);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+    localStorage.setItem("sentinel-theme", isDarkMode ? "dark" : "light");
+  }, [isDarkMode]);
   
   const [websiteName, setWebsiteName] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -823,7 +835,7 @@ const Sentinel = () => {
 
   return (
     <div className="min-h-screen bg-background flex">
-      <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col sticky top-0 h-screen">
+      <aside className="w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col sticky top-0 h-screen dark:backdrop-blur-2xl dark:border-white/10">
         <div className="p-6 border-b border-sidebar-border">
           <h1 className="text-2xl font-bold text-sidebar-foreground">Sentinel</h1>
           <p className="text-sm text-sidebar-foreground/70 mt-1">Website Monitor</p>
@@ -836,8 +848,10 @@ const Sentinel = () => {
                   onClick={() => !isChecking && setActiveTab(item.id)}
                   disabled={isChecking}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    activeTab === item.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
-                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                    activeTab === item.id
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 dark:border dark:border-transparent"
+                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg`}
                 >
                   <item.icon className="w-5 h-5" />
                   <span className="font-medium">{item.label}</span>
@@ -847,6 +861,14 @@ const Sentinel = () => {
           </ul>
         </nav>
         <div className="border-t border-sidebar-border p-4">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            onClick={() => setIsDarkMode((prev) => !prev)}
+          >
+            {isDarkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+            {isDarkMode ? "Light Mode" : "Dark Mode"}
+          </Button>
           <Button
             variant="ghost"
             className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
