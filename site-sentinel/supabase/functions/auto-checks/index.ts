@@ -62,6 +62,19 @@ serve(async () => {
     return new Response(`Failed to load websites: ${error.message}`, { status: 500 });
   }
 
+  const uniqueUserIds = Array.from(
+    new Set((websites || []).map((site: Website) => site.user_id)),
+  );
+  if (uniqueUserIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("auto_checks")
+      .delete()
+      .in("user_id", uniqueUserIds);
+    if (deleteError) {
+      return new Response(`Failed to clear previous checks: ${deleteError.message}`, { status: 500 });
+    }
+  }
+
   const now = new Date().toISOString();
   const inserts: AutoCheckInsert[] = [];
 

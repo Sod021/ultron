@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -104,15 +104,29 @@ const Sentinel = () => {
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
   const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [autoFilter, setAutoFilter] = useState("all");
+  const [autoSearchQuery, setAutoSearchQuery] = useState("");
+  const [isAutoSearchOpen, setIsAutoSearchOpen] = useState(false);
 
   const { autoChecks, isLoading: autoChecksLoading, runAutoChecksNow, fetchAutoChecks } = useAutoChecks();
   const autoLastRun = autoChecks[0]?.checked_at;
+  const normalizedAutoSearchQuery = autoSearchQuery.trim().toLowerCase();
+  const autoSearchMatches = (check: AutoCheck) => {
+    if (!normalizedAutoSearchQuery) return true;
+    const statusCodeText = check.status_code === null ? "" : String(check.status_code);
+    return (
+      check.website_name?.toLowerCase().includes(normalizedAutoSearchQuery) ||
+      check.website_url?.toLowerCase().includes(normalizedAutoSearchQuery) ||
+      check.error_type?.toLowerCase().includes(normalizedAutoSearchQuery) ||
+      statusCodeText.includes(normalizedAutoSearchQuery)
+    );
+  };
+  const autoChecksBySearch = autoChecks.filter(autoSearchMatches);
   const filteredAutoChecks =
     autoFilter === "all"
-      ? autoChecks
+      ? autoChecksBySearch
       : autoFilter === "not-live"
-        ? autoChecks.filter(check => !check.is_live)
-        : autoChecks.filter(check => check.error_type === autoFilter);
+        ? autoChecksBySearch.filter(check => !check.is_live)
+        : autoChecksBySearch.filter(check => check.error_type === autoFilter);
   const autoIssues = autoChecks.filter(check => !check.is_live);
   const autoLiveCount = autoChecks.filter(check => check.is_live).length;
   const autoErrorCounts = autoChecks.reduce<Record<string, number>>((acc, check) => {
@@ -1350,7 +1364,30 @@ const Sentinel = () => {
                       </CardTitle>
                       <CardDescription>Only websites with problems</CardDescription>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant={isAutoSearchOpen ? "default" : "outline"}
+                        size="sm"
+                        onClick={() =>
+                          setIsAutoSearchOpen((open) => {
+                            if (open) {
+                              setAutoSearchQuery("");
+                            }
+                            return !open;
+                          })
+                        }
+                        aria-label="Search automated checks"
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                      {isAutoSearchOpen && (
+                        <Input
+                          value={autoSearchQuery}
+                          onChange={(event) => setAutoSearchQuery(event.target.value)}
+                          placeholder="Search website or error..."
+                          className="h-9 w-56"
+                        />
+                      )}
                       {[
                         { id: "all", label: "All" },
                         { id: "not-live", label: "Not Live" },
