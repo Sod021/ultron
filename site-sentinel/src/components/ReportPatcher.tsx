@@ -45,6 +45,16 @@ export const ReportPatcher = ({ currentUser }: ReportPatcherProps) => {
     try {
       const dateStr = selectedDate.toISOString().split('T')[0];
       const checks = await getChecksByDate(dateStr);
+
+      if (checks.length === 0) {
+        setReportData([]);
+        setFixes({});
+        toast({
+          title: 'No Report Found',
+          description: 'No report saved for the selected date.',
+        });
+        return;
+      }
       
       // Fetch existing fixes for these checks
       const fixesData: Record<number, any> = {};
