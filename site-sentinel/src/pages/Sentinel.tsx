@@ -1685,27 +1685,27 @@ const Sentinel = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      <div>
-                            <Label>Select Date</Label>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button variant="outline" className="w-full justify-start text-left font-normal">
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar 
-                                  mode="single" 
-                                  selected={reportDate} 
-                                  onSelect={setReportDate} 
-                                  initialFocus 
-                                />
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button onClick={generateReport} disabled={checksLoading}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <div className="flex-1 space-y-2">
+                          <Label>Select Date</Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {reportDate ? format(reportDate, "PPP") : <span>Pick a date</span>}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                              <Calendar 
+                                mode="single" 
+                                selected={reportDate} 
+                                onSelect={setReportDate} 
+                                initialFocus 
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <Button onClick={generateReport} disabled={checksLoading} className="sm:mb-[2px]">
                           {checksLoading ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                           ) : (
@@ -1713,6 +1713,8 @@ const Sentinel = () => {
                           )}
                           Generate Report
                         </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
                         {reportData.length > 0 && (
                           <>
                             <Button onClick={downloadPDF} variant="secondary">
