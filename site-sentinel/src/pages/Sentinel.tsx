@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -91,7 +91,9 @@ const Sentinel = () => {
   const reportRef = useRef<HTMLDivElement>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isTabletCollapsed, setIsTabletCollapsed] = useState(false);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("sentinel-theme");
@@ -105,16 +107,30 @@ const Sentinel = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 768px)");
-    const handleChange = () => {
-      setIsMobile(mediaQuery.matches);
-      if (!mediaQuery.matches) {
+    const mobileQuery = window.matchMedia("(max-width: 640px)");
+    const tabletQuery = window.matchMedia("(min-width: 641px) and (max-width: 1024px)");
+
+    const handleMobileChange = () => {
+      setIsMobile(mobileQuery.matches);
+      if (!mobileQuery.matches) {
         setIsMobileNavOpen(false);
       }
     };
-    handleChange();
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    const handleTabletChange = () => {
+      setIsTablet(tabletQuery.matches);
+      if (!tabletQuery.matches) {
+        setIsTabletCollapsed(false);
+      }
+    };
+
+    handleMobileChange();
+    handleTabletChange();
+    mobileQuery.addEventListener("change", handleMobileChange);
+    tabletQuery.addEventListener("change", handleTabletChange);
+    return () => {
+      mobileQuery.removeEventListener("change", handleMobileChange);
+      tabletQuery.removeEventListener("change", handleTabletChange);
+    };
   }, []);
   
   const [websiteName, setWebsiteName] = useState("");
@@ -862,14 +878,31 @@ const Sentinel = () => {
         className={`bg-sidebar-background border-r border-sidebar-border flex flex-col h-screen transition-transform duration-300 dark:backdrop-blur-2xl dark:border-white/10 ${
           isMobile
             ? `fixed top-0 left-0 z-50 w-64 ${isMobileNavOpen ? "translate-x-0" : "-translate-x-full"}`
-            : "sticky top-0 w-64"
-        }`}
+            : "sticky top-0"
+        } ${isTablet ? (isTabletCollapsed ? "w-16" : "w-56") : "w-64"}`}
       >
-        <div className="p-6 border-b border-sidebar-border">
-          <h1 className="text-2xl font-bold text-sidebar-foreground">Sentinel</h1>
-          <p className="text-sm text-sidebar-foreground/70 mt-1">Website Monitor</p>
+        <div className={`border-b border-sidebar-border ${isTablet && isTabletCollapsed ? "px-3 py-4" : "p-6"}`}>
+          <div className={`flex items-center ${isTablet && isTabletCollapsed ? "justify-center" : "justify-between"}`}>
+            {!(isTablet && isTabletCollapsed) && (
+              <div>
+                <h1 className="text-2xl font-bold text-sidebar-foreground">Sentinel</h1>
+                <p className="text-sm text-sidebar-foreground/70 mt-1">Website Monitor</p>
+              </div>
+            )}
+            {isTablet && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setIsTabletCollapsed((prev) => !prev)}
+                aria-label={isTabletCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {isTabletCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </Button>
+            )}
+          </div>
         </div>
-        <nav className="flex-1 p-4">
+        <nav className={`flex-1 ${isTablet && isTabletCollapsed ? "p-2" : "p-4"}`}>
           <ul className="space-y-2">
             {sidebarItems.map((item) => (
               <li key={item.id}>
@@ -884,11 +917,13 @@ const Sentinel = () => {
                     activeTab === item.id
                       ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 dark:border dark:border-transparent"
-                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg`}
+                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg ${
+                    isTablet && isTabletCollapsed ? "justify-center px-0 py-2.5 w-11 h-11 mx-auto gap-0" : ""
+                  }`}
                   title={item.label}
                 >
                   <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
+                  {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
                 </button>
               </li>
             ))}
@@ -897,21 +932,25 @@ const Sentinel = () => {
         <div className="border-t border-sidebar-border p-4">
           <Button
             variant="ghost"
-            className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            className={`w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground ${
+              isTablet && isTabletCollapsed ? "justify-center px-2" : ""
+            }`}
             onClick={() => setIsDarkMode((prev) => !prev)}
             title={isDarkMode ? "Light Mode" : "Dark Mode"}
           >
             {isDarkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-            {isDarkMode ? "Light Mode" : "Dark Mode"}
+            {!(isTablet && isTabletCollapsed) && (isDarkMode ? "Light Mode" : "Dark Mode")}
           </Button>
           <Button
             variant="ghost"
-            className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            className={`w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground ${
+              isTablet && isTabletCollapsed ? "justify-center px-2" : ""
+            }`}
             onClick={handleSignOut}
             title="Sign Out"
           >
             <LogOut className="mr-2 h-4 w-4" />
-            Sign Out
+            {!(isTablet && isTabletCollapsed) && "Sign Out"}
           </Button>
         </div>
       </aside>
