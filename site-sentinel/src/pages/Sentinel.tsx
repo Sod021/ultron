@@ -10,6 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -1524,9 +1525,46 @@ const Sentinel = () => {
                           <thead>
                             <tr className="bg-muted/50 text-left">
                               <th className="border p-2">Website</th>
-                              <th className="border p-2">Status</th>
-                              <th className="border p-2">Error Type</th>
-                              <th className="border p-2">Response</th>
+                              <th className="border p-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1">
+                                      Status <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                                    HTTP status code from the check. 200-299 = OK, 300-399 = redirect, 400-499 =
+                                    client error (403 blocked, 404 not found), 500+ = server error. N/A means no
+                                    response.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </th>
+                              <th className="border p-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1">
+                                      Error Type <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                                    Classification for failures: timeout (no response in time), dns (domain did not
+                                    resolve), 403/500/http (HTTP errors). "ok" means the site responded normally.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </th>
+                              <th className="border p-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1">
+                                      Response <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                                    Response time in milliseconds. "-" means the request failed before a response was
+                                    received.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </th>
                               <th className="border p-2">Last Checked</th>
                             </tr>
                           </thead>
