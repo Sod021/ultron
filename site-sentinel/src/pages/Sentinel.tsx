@@ -966,7 +966,7 @@ const Sentinel = () => {
             {activeTab === "dashboard" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-3xl font-bold text-foreground">Dashboard</h2>
+                  <h2 className="text-3xl font-bold text-foreground md:hidden">Dashboard</h2>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span className="h-2 w-2 rounded-full bg-green-500"></span>
                     <span>Last updated: {new Date().toLocaleTimeString()}</span>
@@ -1229,7 +1229,7 @@ const Sentinel = () => {
 
             {activeTab === "websites" && (
               <div>
-                <h2 className="text-3xl font-bold text-foreground mb-6">Websites</h2>
+                <h2 className="text-3xl font-bold text-foreground mb-6 md:hidden">Websites</h2>
                 <Card className="mb-6">
                   <CardHeader><CardTitle>{editingId ? "Edit Website" : "Add Website"}</CardTitle></CardHeader>
                   <CardContent>
@@ -1374,7 +1374,7 @@ const Sentinel = () => {
 
             {activeTab === "report-patcher" && (
               <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-foreground">Report Patcher</h2>
+                <h2 className="text-3xl font-bold text-foreground md:hidden">Report Patcher</h2>
                 <ReportPatcher currentUser={currentUser?.email || 'System'} />
               </div>
             )}
@@ -1383,7 +1383,7 @@ const Sentinel = () => {
               <div className="space-y-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-3xl font-bold text-foreground">Automated Checks</h2>
+                    <h2 className="text-3xl font-bold text-foreground md:hidden">Automated Checks</h2>
                     <p className="text-muted-foreground">
                       Scheduled website health checks with instant visibility on issues.
                     </p>
@@ -1594,7 +1594,7 @@ const Sentinel = () => {
 
             {activeTab === "reports" && (
               <div className="space-y-6">
-                <h2 className="text-3xl font-bold text-foreground">Reports</h2>
+                <h2 className="text-3xl font-bold text-foreground md:hidden">Reports</h2>
                 
                 {/* Recent Reports Section */}
                 <Card>
