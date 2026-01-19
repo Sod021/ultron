@@ -9,8 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight, User } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -851,7 +859,7 @@ const Sentinel = () => {
     { id: "reports", label: "Reports", icon: FileText },
     { id: "report-patcher", label: "Report Patcher", icon: Wrench },
   ];
-  const activeTabLabel = sidebarItems.find((item) => item.id === activeTab)?.label ?? "Menu";
+  const displayName = currentUser?.email || "User";
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -931,28 +939,41 @@ const Sentinel = () => {
           </ul>
         </nav>
         <div className="border-t border-sidebar-border p-4">
-          <Button
-            variant="ghost"
-            className={`w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground ${
-              isTablet && isTabletCollapsed ? "justify-center px-2" : ""
-            }`}
-            onClick={() => setIsDarkMode((prev) => !prev)}
-            title={isDarkMode ? "Light Mode" : "Dark Mode"}
-          >
-            {isDarkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-            {!(isTablet && isTabletCollapsed) && (isDarkMode ? "Light Mode" : "Dark Mode")}
-          </Button>
-          <Button
-            variant="ghost"
-            className={`w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground ${
-              isTablet && isTabletCollapsed ? "justify-center px-2" : ""
-            }`}
-            onClick={handleSignOut}
-            title="Sign Out"
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            {!(isTablet && isTabletCollapsed) && "Sign Out"}
-          </Button>
+          <div className={`flex ${isTablet && isTabletCollapsed ? "justify-center" : "justify-start"}`}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-3 px-3 py-2 text-sidebar-foreground/90 transition hover:text-sidebar-foreground ${
+                    isTablet && isTabletCollapsed ? "px-0 py-2 w-11 justify-center" : ""
+                  }`}
+                  aria-label="Open profile menu"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10 shadow-sm backdrop-blur-lg">
+                    <User className="h-5 w-5" />
+                  </span>
+                  {!(isTablet && isTabletCollapsed) && (
+                    <span className="text-[12px] font-medium">{displayName}</span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  {currentUser?.email || "Profile"}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsDarkMode((prev) => !prev)}>
+                  {isDarkMode ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                  {isDarkMode ? "Light Mode" : "Dark Mode"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </aside>
 
