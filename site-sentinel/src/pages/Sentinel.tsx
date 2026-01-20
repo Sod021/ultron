@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, LayoutDashboard, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight, User } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, ClipboardCheck, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight, User } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -855,7 +855,7 @@ const Sentinel = () => {
   };
 
   const sidebarItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "dashboard", label: "Manual Checks", icon: ClipboardCheck },
     { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
