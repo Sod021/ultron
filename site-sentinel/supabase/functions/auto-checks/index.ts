@@ -49,9 +49,17 @@ const classifyError = (status: number | null, error: string | null) => {
   return "ok";
 };
 
-serve(async () => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response("Missing Supabase env vars", { status: 500 });
+    return new Response("Missing Supabase env vars", { status: 500, headers: corsHeaders });
   }
 
   const { data: websites, error } = await supabase
@@ -59,7 +67,7 @@ serve(async () => {
     .select("id, user_id, name, url");
 
   if (error) {
-    return new Response(`Failed to load websites: ${error.message}`, { status: 500 });
+    return new Response(`Failed to load websites: ${error.message}`, { status: 500, headers: corsHeaders });
   }
 
   const uniqueUserIds = Array.from(
@@ -71,7 +79,7 @@ serve(async () => {
       .delete()
       .in("user_id", uniqueUserIds);
     if (deleteError) {
-      return new Response(`Failed to clear previous checks: ${deleteError.message}`, { status: 500 });
+      return new Response(`Failed to clear previous checks: ${deleteError.message}`, { status: 500, headers: corsHeaders });
     }
   }
 
@@ -111,13 +119,13 @@ serve(async () => {
   }
 
   if (inserts.length === 0) {
-    return new Response(JSON.stringify({ inserted: 0 }), { status: 200 });
+    return new Response(JSON.stringify({ inserted: 0 }), { status: 200, headers: corsHeaders });
   }
 
   const { error: insertError } = await supabase.from("auto_checks").insert(inserts);
   if (insertError) {
-    return new Response(`Failed to insert checks: ${insertError.message}`, { status: 500 });
+    return new Response(`Failed to insert checks: ${insertError.message}`, { status: 500, headers: corsHeaders });
   }
 
-  return new Response(JSON.stringify({ inserted: inserts.length }), { status: 200 });
+  return new Response(JSON.stringify({ inserted: inserts.length }), { status: 200, headers: corsHeaders });
 });

@@ -94,6 +94,8 @@ export const useAutoChecks = () => {
 
   useEffect(() => {
     fetchAutoChecks();
+    const intervalId = window.setInterval(fetchAutoChecks, 2 * 60 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   return {
