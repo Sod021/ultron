@@ -158,6 +158,7 @@ const Sentinel = () => {
   const [autoFilter, setAutoFilter] = useState("all");
   const [autoSearchQuery, setAutoSearchQuery] = useState("");
   const [isAutoSearchOpen, setIsAutoSearchOpen] = useState(false);
+  const [showAllAutoIssues, setShowAllAutoIssues] = useState(false);
 
   const { autoChecks, isLoading: autoChecksLoading, runAutoChecksNow, fetchAutoChecks } = useAutoChecks();
   const autoLastRun = autoChecks[0]?.checked_at;
@@ -179,6 +180,7 @@ const Sentinel = () => {
       : autoFilter === "not-live"
         ? autoChecksBySearch.filter(check => !check.is_live)
         : autoChecksBySearch.filter(check => check.error_type === autoFilter);
+  const visibleAutoChecks = showAllAutoIssues ? filteredAutoChecks : filteredAutoChecks.slice(0, 5);
   const autoIssues = autoChecks.filter(check => !check.is_live);
   const autoLiveCount = autoChecks.filter(check => check.is_live).length;
   const autoErrorCounts = autoChecks.reduce<Record<string, number>>((acc, check) => {
@@ -1541,7 +1543,8 @@ const Sentinel = () => {
                         No automated issues yet. Once checks run, problem sites will appear here.
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
+                      <div className="space-y-3">
+                        <div className="overflow-x-auto">
                         <table className="w-full border-collapse text-sm">
                           <thead>
                             <tr className="bg-muted/50 text-left">
@@ -1590,7 +1593,7 @@ const Sentinel = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredAutoChecks.map((check) => (
+                            {visibleAutoChecks.map((check) => (
                               <tr key={check.id} className="border-b">
                                 <td className="border p-2">
                                   <div className="font-medium">{check.website_name}</div>
@@ -1610,6 +1613,19 @@ const Sentinel = () => {
                             ))}
                           </tbody>
                         </table>
+                        </div>
+                        {filteredAutoChecks.length > 5 && (
+                          <div className="flex">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => setShowAllAutoIssues((prev) => !prev)}
+                            >
+                              {showAllAutoIssues ? "Show Less" : `View All (${filteredAutoChecks.length})`}
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
