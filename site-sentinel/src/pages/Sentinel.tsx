@@ -927,7 +927,7 @@ const Sentinel = () => {
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     activeTab === item.id
                       ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 dark:border dark:border-transparent"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
                   } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg ${
                     isTablet && isTabletCollapsed ? "justify-center px-0 py-2.5 w-11 h-11 mx-auto gap-0" : ""
                   }`}
@@ -1597,7 +1597,14 @@ const Sentinel = () => {
                               <tr key={check.id} className="border-b">
                                 <td className="border p-2">
                                   <div className="font-medium">{check.website_name}</div>
-                                  <div className="text-xs text-muted-foreground">{check.website_url}</div>
+                                  <a
+                                    href={check.website_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-primary hover:underline"
+                                  >
+                                    {check.website_url}
+                                  </a>
                                 </td>
                                 <td className="border p-2">
                                   {check.status_code ?? "N/A"}
@@ -1653,7 +1660,14 @@ const Sentinel = () => {
                           <div key={check.id} className="flex items-center justify-between rounded-lg border p-3">
                             <div>
                               <div className="font-medium">{check.website_name}</div>
-                              <div className="text-xs text-muted-foreground">{check.website_url}</div>
+                              <a
+                                href={check.website_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline"
+                              >
+                                {check.website_url}
+                              </a>
                             </div>
                             <div className="text-sm text-muted-foreground">
                               {check.status_code ?? "N/A"} • {check.response_time_ms ? `${check.response_time_ms}ms` : "-"}
