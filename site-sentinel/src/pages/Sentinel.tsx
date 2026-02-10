@@ -38,7 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { useWebsites, type Website } from "@/hooks/useWebsites";
+import { useWebsites, type Website, type WebsiteInput } from "@/hooks/useWebsites";
 import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
 import { useAutoChecks, type AutoCheck } from "@/hooks/useAutoChecks";
 import { ReportPatcher } from "@/components/ReportPatcher";
@@ -144,6 +144,16 @@ const Sentinel = () => {
   
   const [websiteName, setWebsiteName] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
+  const [hasWebsiteMail, setHasWebsiteMail] = useState("no");
+  const [websiteMail, setWebsiteMail] = useState("");
+  const [mailPassword, setMailPassword] = useState("");
+  const [currentMailService, setCurrentMailService] = useState("");
+  const [currentMailServiceOther, setCurrentMailServiceOther] = useState("");
+  const [previousMailService, setPreviousMailService] = useState("");
+  const [previousMailServiceOther, setPreviousMailServiceOther] = useState("");
+  const [dateCreated, setDateCreated] = useState("");
+  const [terminationDate, setTerminationDate] = useState("");
+  const [thinkTechServer, setThinkTechServer] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isLive, setIsLive] = useState<string>("yes");
   const [isFunctional, setIsFunctional] = useState<string>("yes");
@@ -370,27 +380,125 @@ const Sentinel = () => {
 
   const addWebsite = async () => {
     if (!websiteName || !websiteUrl) {
-      toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" });
+      toast({ title: "Error", description: "Please fill in Website Name and URL", variant: "destructive" });
       return;
     }
-    
+
+    const normalizeMailServiceValue = (selected: string, other: string) => {
+      if (!selected) return null;
+      if (selected !== "other") return selected;
+      const trimmed = other.trim();
+      return trimmed || null;
+    };
+
+    const payload: WebsiteInput = {
+      name: websiteName.trim(),
+      url: websiteUrl.trim(),
+      website_mail: hasWebsiteMail === "yes" ? websiteMail.trim() || null : null,
+      mail_password: hasWebsiteMail === "yes" ? mailPassword.trim() || null : null,
+      current_mail_service:
+        hasWebsiteMail === "yes"
+          ? normalizeMailServiceValue(currentMailService, currentMailServiceOther)
+          : null,
+      previous_mail_service:
+        hasWebsiteMail === "yes"
+          ? normalizeMailServiceValue(previousMailService, previousMailServiceOther)
+          : null,
+      date_created: hasWebsiteMail === "yes" ? dateCreated || null : null,
+      termination_date: hasWebsiteMail === "yes" ? terminationDate || null : null,
+      thinktech_server: hasWebsiteMail === "yes" ? thinkTechServer || null : null,
+    };
+
     try {
       if (editingId) {
-        // FIX: Pass arguments individually (id, name, url)
-        await updateWebsiteDB(editingId, websiteName, websiteUrl);
+        await updateWebsiteDB(editingId, payload);
         toast({ title: "Success", description: "Website updated successfully" });
         setEditingId(null);
       } else {
-        // FIX: Pass arguments individually (name, url)
-        await addWebsiteDB(websiteName, websiteUrl);
+        await addWebsiteDB(payload);
         toast({ title: "Success", description: "Website added successfully" });
       }
       setWebsiteName("");
       setWebsiteUrl("");
+      setWebsiteMail("");
+      setMailPassword("");
+      setCurrentMailService("");
+      setCurrentMailServiceOther("");
+      setPreviousMailService("");
+      setPreviousMailServiceOther("");
+      setDateCreated("");
+      setTerminationDate("");
+      setThinkTechServer("");
     } catch (error) {
       console.error("Error saving website:", error);
       toast({ title: "Error", description: "Failed to save website", variant: "destructive" });
     }
+  };
+
+  const resetWebsiteForm = () => {
+    setEditingId(null);
+    setWebsiteName("");
+    setWebsiteUrl("");
+    setHasWebsiteMail("no");
+    setWebsiteMail("");
+    setMailPassword("");
+    setCurrentMailService("");
+    setCurrentMailServiceOther("");
+    setPreviousMailService("");
+    setPreviousMailServiceOther("");
+    setDateCreated("");
+    setTerminationDate("");
+    setThinkTechServer("");
+  };
+
+  const setMailServiceState = (
+    value: string | null | undefined,
+    setSelect: (v: string) => void,
+    setOther: (v: string) => void
+  ) => {
+    const trimmed = value?.trim() || "";
+    const normalized = trimmed.toLowerCase();
+    if (!trimmed) {
+      setSelect("");
+      setOther("");
+      return;
+    }
+    if (normalized === "titan") {
+      setSelect("Titan");
+      setOther("");
+      return;
+    }
+    if (normalized === "hostinger") {
+      setSelect("Hostinger");
+      setOther("");
+      return;
+    }
+    setSelect("other");
+    setOther(trimmed);
+  };
+
+  const startWebsiteEdit = (website: Website) => {
+    setWebsiteName(website.name);
+    setWebsiteUrl(website.url);
+    const hasMailData = Boolean(
+      website.website_mail ||
+      website.mail_password ||
+      website.current_mail_service ||
+      website.previous_mail_service ||
+      website.date_created ||
+      website.termination_date ||
+      website.thinktech_server
+    );
+    setHasWebsiteMail(hasMailData ? "yes" : "no");
+    setWebsiteMail(website.website_mail || "");
+    setMailPassword(website.mail_password || "");
+    setMailServiceState(website.current_mail_service, setCurrentMailService, setCurrentMailServiceOther);
+    setMailServiceState(website.previous_mail_service, setPreviousMailService, setPreviousMailServiceOther);
+    setDateCreated(website.date_created || "");
+    setTerminationDate(website.termination_date || "");
+    setThinkTechServer(website.thinktech_server || "");
+    setEditingId(website.id);
+    setActiveTab("add-website");
   };
 
   const stopDailyChecks = () => {
@@ -946,6 +1054,24 @@ const Sentinel = () => {
                   <item.icon className="w-5 h-5" />
                   {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
                 </button>
+                {item.id === "websites" && !(isTablet && isTabletCollapsed) && (
+                  <button
+                    onClick={() => {
+                      if (isChecking) return;
+                      setActiveTab("add-website");
+                      if (isMobile) setIsMobileNavOpen(false);
+                    }}
+                    disabled={isChecking}
+                    className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      activeTab === "add-website"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="font-medium">Add Website</span>
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -1233,7 +1359,7 @@ const Sentinel = () => {
                     <RefreshCw className="h-6 w-6" />
                     <span>Run Checks</span>
                   </Button>
-                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => setActiveTab('websites')}>
+                  <Button variant="outline" className="h-24 flex-col gap-2" onClick={() => setActiveTab('add-website')}>
                     <Plus className="h-6 w-6" />
                     <span>Add Website</span>
                   </Button>
@@ -1256,6 +1382,220 @@ const Sentinel = () => {
                     <Button onClick={startDailyCheck} size="lg" className="w-full sm:w-auto">
                       Start Daily Checks
                     </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "add-website" && (
+              <div className="space-y-6">
+                <h2 className="text-3xl font-bold text-foreground mb-6 md:hidden">Add Website</h2>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{editingId ? "Edit Website Details" : "Add Website Details"}</CardTitle>
+                    <CardDescription>
+                      Only Website Name and URL are required. All other details are optional and can be updated later.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-6">
+                      <div className="grid gap-6 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="name">Website Name</Label>
+                          <Input id="name" value={websiteName} onChange={(e) => setWebsiteName(e.target.value)} placeholder="My Website" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="url">URL</Label>
+                          <Input id="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://example.com" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Website Mail</Label>
+                        <Select
+                          value={hasWebsiteMail}
+                          onValueChange={(value) => {
+                            setHasWebsiteMail(value);
+                            if (value === "no") {
+                              setWebsiteMail("");
+                              setMailPassword("");
+                              setCurrentMailService("");
+                              setCurrentMailServiceOther("");
+                              setPreviousMailService("");
+                              setPreviousMailServiceOther("");
+                              setDateCreated("");
+                              setTerminationDate("");
+                              setThinkTechServer("");
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-full md:w-[260px]">
+                            <SelectValue placeholder="Does this website have mail?" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="yes">Yes</SelectItem>
+                            <SelectItem value="no">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {hasWebsiteMail === "yes" && (
+                        <>
+                          <div className="grid gap-6 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="website-mail">Mail Address</Label>
+                              <Input
+                                id="website-mail"
+                                name="website_mail_optional"
+                                type="email"
+                                autoComplete="off"
+                                value={websiteMail}
+                                onChange={(e) => setWebsiteMail(e.target.value)}
+                                placeholder="admin@example.com"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="mail-password">Mail Password</Label>
+                              <Input
+                                id="mail-password"
+                                name="website_mail_password_optional"
+                                type="password"
+                                autoComplete="new-password"
+                                value={mailPassword}
+                                onChange={(e) => setMailPassword(e.target.value)}
+                                placeholder="Optional password"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-6 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Current Mail Service</Label>
+                              <Select value={currentMailService} onValueChange={setCurrentMailService}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select mail service" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Titan">Titan</SelectItem>
+                                  <SelectItem value="Hostinger">Hostinger</SelectItem>
+                                  <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {currentMailService === "other" && (
+                                <Input
+                                  value={currentMailServiceOther}
+                                  onChange={(e) => setCurrentMailServiceOther(e.target.value)}
+                                  placeholder="Type current mail service"
+                                />
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Previous Mail Service</Label>
+                              <Select value={previousMailService} onValueChange={setPreviousMailService}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select previous service" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Titan">Titan</SelectItem>
+                                  <SelectItem value="Hostinger">Hostinger</SelectItem>
+                                  <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {previousMailService === "other" && (
+                                <Input
+                                  value={previousMailServiceOther}
+                                  onChange={(e) => setPreviousMailServiceOther(e.target.value)}
+                                  placeholder="Type previous mail service"
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid gap-6 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="date-created">Mail Date Created</Label>
+                              <Input
+                                id="date-created"
+                                type="date"
+                                value={dateCreated}
+                                onChange={(e) => setDateCreated(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="termination-date">Mail Termination Date</Label>
+                              <Input
+                                id="termination-date"
+                                type="date"
+                                value={terminationDate}
+                                onChange={(e) => setTerminationDate(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex h-6 items-center gap-2">
+                                <Label>ThinkTech Server</Label>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="text-muted-foreground hover:text-foreground transition-colors"
+                                      aria-label="ThinkTech Server info"
+                                    >
+                                      <Info className="h-4 w-4" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Which server was used to create this mail</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                              <Select value={thinkTechServer} onValueChange={setThinkTechServer}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select server" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Server 1">Server 1</SelectItem>
+                                  <SelectItem value="Server 2">Server 2</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="space-y-2 pt-2">
+                        <div className="flex flex-wrap gap-2">
+                          <Button onClick={addWebsite} disabled={websitesLoading}>
+                            {websitesLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            <Plus className="w-4 h-4 mr-2" />
+                            {editingId ? "Update" : "Add"} Website
+                          </Button>
+                          <div className="relative">
+                            <Button type="button" variant="outline" asChild>
+                              <Label htmlFor="csv-upload" className="cursor-pointer">
+                                <Download className="w-4 h-4 mr-2" /> Import CSV
+                              </Label>
+                            </Button>
+                            <Input
+                              id="csv-upload"
+                              type="file"
+                              accept=".csv"
+                              className="hidden"
+                              onChange={handleCSVImport}
+                              disabled={websitesLoading}
+                            />
+                          </div>
+                          {editingId && (
+                            <Button variant="outline" onClick={resetWebsiteForm}>
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                        {importError && <p className="text-sm text-destructive">{importError}</p>}
+                        <p className="text-xs text-muted-foreground">
+                          CSV format: <code className="bg-muted px-1 rounded">name,url</code>
+                        </p>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -1296,11 +1636,7 @@ const Sentinel = () => {
                             {editingId && (
                               <Button 
                                 variant="outline" 
-                                onClick={() => { 
-                                  setEditingId(null); 
-                                  setWebsiteName(""); 
-                                  setWebsiteUrl(""); 
-                                }}
+                                onClick={resetWebsiteForm}
                               >
                                 Cancel
                               </Button>
@@ -1354,11 +1690,7 @@ const Sentinel = () => {
                                   <Button 
                                     variant="outline" 
                                     size="sm" 
-                                    onClick={() => { 
-                                      setWebsiteName(website.name); 
-                                      setWebsiteUrl(website.url); 
-                                      setEditingId(website.id); 
-                                    }}
+                                    onClick={() => startWebsiteEdit(website)}
                                   >
                                     <Edit className="w-4 h-4" />
                                   </Button>

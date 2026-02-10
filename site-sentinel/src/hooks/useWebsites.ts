@@ -7,7 +7,26 @@ export interface Website {
   name: string;
   url: string;
   created_at: string;
+  website_mail?: string | null;
+  mail_password?: string | null;
+  current_mail_service?: string | null;
+  previous_mail_service?: string | null;
+  date_created?: string | null;
+  termination_date?: string | null;
+  thinktech_server?: string | null;
 }
+
+export type WebsiteInput = {
+  name: string;
+  url: string;
+  website_mail?: string | null;
+  mail_password?: string | null;
+  current_mail_service?: string | null;
+  previous_mail_service?: string | null;
+  date_created?: string | null;
+  termination_date?: string | null;
+  thinktech_server?: string | null;
+};
 
 export const useWebsites = () => {
   const [websites, setWebsites] = useState<Website[]>([]);
@@ -45,18 +64,28 @@ export const useWebsites = () => {
   };
 
   // Add a new website
-  const addWebsite = async (name: string, url: string) => {
+  const addWebsite = async (website: WebsiteInput) => {
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData.user) {
         throw new Error('You must be signed in to add a website.');
       }
 
+      const payload = {
+        ...website,
+        website_mail: website.website_mail || null,
+        mail_password: website.mail_password || null,
+        current_mail_service: website.current_mail_service || null,
+        previous_mail_service: website.previous_mail_service || null,
+        date_created: website.date_created || null,
+        termination_date: website.termination_date || null,
+        thinktech_server: website.thinktech_server || null,
+      };
+
       const { data, error } = await supabase
         .from('websites')
         .insert({
-          name,
-          url,
+          ...payload,
           user_id: authData.user.id,
         })
         .select('*')
@@ -82,11 +111,22 @@ export const useWebsites = () => {
   };
 
   // Update a website
-  const updateWebsite = async (id: number, name: string, url: string) => {
+  const updateWebsite = async (id: number, website: WebsiteInput) => {
     try {
+      const payload = {
+        ...website,
+        website_mail: website.website_mail || null,
+        mail_password: website.mail_password || null,
+        current_mail_service: website.current_mail_service || null,
+        previous_mail_service: website.previous_mail_service || null,
+        date_created: website.date_created || null,
+        termination_date: website.termination_date || null,
+        thinktech_server: website.thinktech_server || null,
+      };
+
       const { data, error } = await supabase
         .from('websites')
-        .update({ name, url })
+        .update(payload)
         .eq('id', id)
         .select('*')
         .single();
