@@ -658,6 +658,16 @@ const Sentinel = () => {
 
   const generateAndDownloadPDF = (checks: DailyCheck[], filenamePrefix: string) => {
     try {
+      // Fall back to check timestamps when reportDate isn't explicitly selected in UI.
+      const parsedCheckDates = checks
+        .map((check) => new Date(check.created_at))
+        .filter((date) => !Number.isNaN(date.getTime()));
+      const inferredReportDate =
+        parsedCheckDates.length > 0
+          ? new Date(Math.max(...parsedCheckDates.map((date) => date.getTime())))
+          : null;
+      const effectiveReportDate = reportDate ?? inferredReportDate;
+
       // Initialize jsPDF
       const doc = new jsPDF({
         orientation: 'l',
@@ -679,7 +689,7 @@ const Sentinel = () => {
       doc.setFontSize(12);
       doc.setTextColor(100);
       doc.text(
-        `Report Date: ${reportDate ? format(reportDate, "PPPP") : 'N/A'}`,
+        `Report Date: ${effectiveReportDate ? format(effectiveReportDate, "PPPP") : 'N/A'}`,
         14,
         30
       );
@@ -820,7 +830,7 @@ const Sentinel = () => {
       });
 
       // Save the PDF
-      const filename = `${filenamePrefix}${format(reportDate || new Date(), "yyyy-MM-dd")}.pdf`;
+      const filename = `${filenamePrefix}${format(effectiveReportDate || new Date(), "yyyy-MM-dd")}.pdf`;
       doc.save(filename);
       
       // Show success toast
