@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, ClipboardCheck, Globe, FileText, Download, AlertTriangle, ChevronDown, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight, User } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Edit, Trash2, ExternalLink, CheckCircle2, XCircle, ClipboardCheck, Globe, FileText, Download, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Loader2, ArrowUp, ArrowDown, Info, Eye, Wrench, LogOut, Search, Sun, Moon, Menu, ChevronLeft, ChevronRight, User } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -164,6 +164,10 @@ const Sentinel = () => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearWebsitesDialogOpen, setIsClearWebsitesDialogOpen] = useState(false);
   const [showAllWebsites, setShowAllWebsites] = useState(false);
+  const [expandedWebsiteId, setExpandedWebsiteId] = useState<number | null>(null);
+  const [visiblePasswordKeys, setVisiblePasswordKeys] = useState<Record<string, boolean>>({});
+  const [websiteSearchQuery, setWebsiteSearchQuery] = useState("");
+  const [selectedSearchWebsiteId, setSelectedSearchWebsiteId] = useState<number | null>(null);
   const [autoFilter, setAutoFilter] = useState("all");
   const [autoSearchQuery, setAutoSearchQuery] = useState("");
   const [isAutoSearchOpen, setIsAutoSearchOpen] = useState(false);
@@ -198,6 +202,24 @@ const Sentinel = () => {
     }
     return acc;
   }, {});
+  const normalizedWebsiteSearchQuery = websiteSearchQuery.trim().toLowerCase();
+  const searchedWebsites = normalizedWebsiteSearchQuery
+    ? websites.filter((website) => website.name.toLowerCase().includes(normalizedWebsiteSearchQuery))
+    : [];
+  const selectedSearchedWebsite =
+    searchedWebsites.find((website) => website.id === selectedSearchWebsiteId) ||
+    searchedWebsites[0] ||
+    null;
+
+  useEffect(() => {
+    if (!normalizedWebsiteSearchQuery) {
+      setSelectedSearchWebsiteId(null);
+      return;
+    }
+    if (!searchedWebsites.some((website) => website.id === selectedSearchWebsiteId)) {
+      setSelectedSearchWebsiteId(searchedWebsites[0]?.id ?? null);
+    }
+  }, [normalizedWebsiteSearchQuery, searchedWebsites, selectedSearchWebsiteId]);
   
   // Combined loading state for UI display
   const [isLoading, setIsLoading] = useState({
@@ -1661,57 +1683,248 @@ const Sentinel = () => {
             )}
 
             {activeTab === "websites" && (
-              <div>
+              <div className="space-y-6">
                 <h2 className="text-3xl font-bold text-foreground mb-6 md:hidden">Websites</h2>
-                <Card className="mb-6">
-                  <CardHeader><CardTitle>{editingId ? "Edit Website" : "Add Website"}</CardTitle></CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4">
-                      <div><Label htmlFor="name">Website Name</Label><Input id="name" value={websiteName} onChange={(e) => setWebsiteName(e.target.value)} placeholder="My Website" /></div>
-                      <div><Label htmlFor="url">URL</Label><Input id="url" value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="https://example.com" /></div>
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <Button onClick={addWebsite} disabled={websitesLoading}>
-                              {websitesLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                              <Plus className="w-4 h-4 mr-2" />
-                              {editingId ? "Update" : "Add"} Website
-                            </Button>
-                            <div className="relative">
-                              <Button type="button" variant="outline" asChild>
-                                <Label htmlFor="csv-upload" className="cursor-pointer">
-                                  <Download className="w-4 h-4 mr-2" /> Import CSV
-                                </Label>
-                              </Button>
-                              <Input 
-                                id="csv-upload"
-                                type="file"
-                                accept=".csv"
-                                className="hidden"
-                                onChange={handleCSVImport}
-                                disabled={websitesLoading}
-                              />
-                            </div>
-                            {editingId && (
-                              <Button 
-                                variant="outline" 
-                                onClick={resetWebsiteForm}
-                              >
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        {importError && (
-                          <p className="text-sm text-destructive">{importError}</p>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Total Websites</CardTitle>
+                      <CardDescription>Websites currently tracked</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-4xl font-bold">
+                        {websitesLoading ? (
+                          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        ) : (
+                          websites.length
                         )}
-                        <p className="text-xs text-muted-foreground">
-                          CSV format: <code className="bg-muted px-1 rounded">name,url</code>
-                        </p>
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card
+                    className="cursor-pointer transition hover:border-primary/40 hover:bg-muted/40"
+                    onClick={() => setActiveTab("add-website")}
+                  >
+                    <CardHeader>
+                      <CardTitle>Add a Website</CardTitle>
+                      <CardDescription>Click to add website</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex min-h-[96px] items-center justify-start">
+                      <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#1b1f27] shadow-lg shadow-black/20">
+                        <Plus className="h-7 w-7 text-white" />
+                      </span>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Search Website</CardTitle>
+                    <CardDescription>Type a website name to view complete details</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="website-search"
+                        value={websiteSearchQuery}
+                        onChange={(e) => setWebsiteSearchQuery(e.target.value)}
+                        placeholder="Search by website name..."
+                        className="pl-10"
+                      />
                     </div>
+
+                    {normalizedWebsiteSearchQuery && (
+                      <div className="space-y-3">
+                        {searchedWebsites.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {searchedWebsites.map((website) => (
+                              <Button
+                                key={`search-result-${website.id}`}
+                                type="button"
+                                size="sm"
+                                variant={selectedSearchedWebsite?.id === website.id ? "default" : "outline"}
+                                onClick={() => setSelectedSearchWebsiteId(website.id)}
+                              >
+                                {website.name}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No website matched your search.</p>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
+
+                {selectedSearchedWebsite && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-2xl">Website Details</CardTitle>
+                      <CardDescription>Full details for the selected website</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-8">
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground">Website Name</p>
+                        <p className="text-2xl font-semibold text-foreground">{selectedSearchedWebsite.name}</p>
+                      </div>
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground">URL</p>
+                        <a
+                          href={selectedSearchedWebsite.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-lg text-primary hover:underline inline-flex items-center gap-2 break-all"
+                        >
+                          {selectedSearchedWebsite.url}
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+
+                      <div className="space-y-4">
+                        <p className="text-sm font-medium text-muted-foreground">Website Mail Accounts</p>
+                        {selectedSearchedWebsite.website_mail || selectedSearchedWebsite.mail_password ? (
+                          <div className="space-y-4">
+                            {Array.from({
+                              length: Math.max(
+                                (selectedSearchedWebsite.website_mail || "").split("\n").filter(Boolean).length,
+                                (selectedSearchedWebsite.mail_password || "").split("\n").length,
+                                1
+                              ),
+                            }).map((_, index) => {
+                              const emails = (selectedSearchedWebsite.website_mail || "")
+                                .split("\n")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              const passwords = (selectedSearchedWebsite.mail_password || "")
+                                .split("\n")
+                                .map((item) => item.trim());
+                              const passwordKey = `search-${selectedSearchedWebsite.id}-${index}`;
+                              const rawPassword = passwords[index] || "";
+                              const isVisible = Boolean(visiblePasswordKeys[passwordKey]);
+
+                              return (
+                                <div key={passwordKey} className="rounded-lg border bg-background p-5 space-y-4">
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium text-muted-foreground">Mail {index + 1}</p>
+                                    <p className="text-lg text-foreground break-all">{emails[index] || "-"}</p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium text-muted-foreground">Password</p>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <code className="rounded bg-muted px-3 py-2 text-base text-foreground">
+                                        {rawPassword
+                                          ? (isVisible ? rawPassword : "•".repeat(Math.max(rawPassword.length, 8)))
+                                          : "-"}
+                                      </code>
+                                      {rawPassword && (
+                                        <>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() =>
+                                              setVisiblePasswordKeys((prev) => ({
+                                                ...prev,
+                                                [passwordKey]: !prev[passwordKey],
+                                              }))
+                                            }
+                                          >
+                                            <Eye className="w-4 h-4 mr-2" />
+                                            {isVisible ? "Hide" : "Show"}
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={async () => {
+                                              try {
+                                                await navigator.clipboard.writeText(rawPassword);
+                                                toast({ title: "Copied", description: "Password copied to clipboard" });
+                                              } catch (error) {
+                                                toast({
+                                                  title: "Copy failed",
+                                                  description: "Unable to copy password",
+                                                  variant: "destructive",
+                                                });
+                                              }
+                                            }}
+                                          >
+                                            Copy
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-lg text-muted-foreground">No mail configured</p>
+                        )}
+                      </div>
+
+                      <div className="grid gap-6 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Current Mail Service</p>
+                          <p className="text-lg text-foreground">{selectedSearchedWebsite.current_mail_service || "-"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Previous Mail Service</p>
+                          <p className="text-lg text-foreground">{selectedSearchedWebsite.previous_mail_service || "-"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Mail Date Created</p>
+                          <p className="text-lg text-foreground">{selectedSearchedWebsite.date_created || "-"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Mail Termination Date</p>
+                          <p className="text-lg text-foreground">{selectedSearchedWebsite.termination_date || "-"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">ThinkTech Server</p>
+                          <p className="text-lg text-foreground">{selectedSearchedWebsite.thinktech_server || "-"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Record Created</p>
+                          <p className="text-lg text-foreground">{format(new Date(selectedSearchedWebsite.created_at), "PPpp")}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => startWebsiteEdit(selectedSearchedWebsite)}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Website
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={async () => {
+                            try {
+                              await deleteWebsiteDB(selectedSearchedWebsite.id);
+                              toast({ title: "Success", description: "Website deleted" });
+                              setSelectedSearchWebsiteId(null);
+                            } catch (error) {
+                              toast({
+                                title: "Error",
+                                description: "Failed to delete website",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Website
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle>Your Websites</CardTitle>
@@ -1737,44 +1950,193 @@ const Sentinel = () => {
                           {websites
                             .slice(0, showAllWebsites ? websites.length : 5)
                             .map((website) => (
-                              <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
-                                <div className="flex-1">
-                                  <h3 className="font-semibold text-foreground">{website.name}</h3>
-                                  <a href={website.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                                    {website.url}
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => startWebsiteEdit(website)}
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button 
-                                    variant="destructive" 
-                                    size="sm" 
-                                    onClick={async () => { 
-                                      try {
-                                        await deleteWebsiteDB(website.id); 
-                                        toast({ title: "Success", description: "Website deleted" }); 
-                                      } catch (e) {
-                                        toast({ title: "Error", description: "Failed to delete website", variant: "destructive" });
-                                      }
-                                    }}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
+                              <div key={website.id} className="border rounded-lg overflow-hidden">
+                                <button
+                                  type="button"
+                                  className="w-full flex items-center justify-between p-4 hover:bg-muted/40 transition-colors text-left"
+                                  onClick={() =>
+                                    setExpandedWebsiteId((prev) => (prev === website.id ? null : website.id))
+                                  }
+                                >
+                                  <div className="min-w-0">
+                                    <h3 className="font-semibold text-foreground truncate">{website.name}</h3>
+                                    <p className="text-sm text-muted-foreground truncate">{website.url}</p>
+                                  </div>
+                                  {expandedWebsiteId === website.id ? (
+                                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                </button>
+
+                                {expandedWebsiteId === website.id && (
+                                  <div className="border-t bg-muted/20 p-6 space-y-5">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Website Name</p>
+                                      <p className="font-medium text-foreground">{website.name}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">URL</p>
+                                      <a
+                                        href={website.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                                      >
+                                        {website.url}
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Website Mail</p>
+                                      {website.website_mail || website.mail_password ? (
+                                        <div className="space-y-3 mt-2">
+                                          {Array.from({
+                                            length: Math.max(
+                                              (website.website_mail || "").split("\n").filter(Boolean).length,
+                                              (website.mail_password || "").split("\n").length,
+                                              1
+                                            ),
+                                          }).map((_, index) => {
+                                            const emails = (website.website_mail || "")
+                                              .split("\n")
+                                              .map((item) => item.trim())
+                                              .filter(Boolean);
+                                            const passwords = (website.mail_password || "")
+                                              .split("\n")
+                                              .map((item) => item.trim());
+                                            const passwordKey = `${website.id}-${index}`;
+                                            const rawPassword = passwords[index] || "";
+                                            const isVisible = Boolean(visiblePasswordKeys[passwordKey]);
+
+                                            return (
+                                              <div key={passwordKey} className="rounded-md border bg-background/60 p-4 space-y-3">
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground">Mail {index + 1}</p>
+                                                  <p className="text-sm text-foreground break-all">
+                                                    {emails[index] || "-"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-xs text-muted-foreground">Password</p>
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    <code className="rounded bg-muted px-2 py-1 text-xs text-foreground">
+                                                      {rawPassword
+                                                        ? (isVisible ? rawPassword : "•".repeat(Math.max(rawPassword.length, 8)))
+                                                        : "-"}
+                                                    </code>
+                                                    {rawPassword && (
+                                                      <>
+                                                        <Button
+                                                          type="button"
+                                                          variant="outline"
+                                                          size="sm"
+                                                          onClick={() =>
+                                                            setVisiblePasswordKeys((prev) => ({
+                                                              ...prev,
+                                                              [passwordKey]: !prev[passwordKey],
+                                                            }))
+                                                          }
+                                                        >
+                                                          <Eye className="w-4 h-4 mr-1" />
+                                                          {isVisible ? "Hide" : "Show"}
+                                                        </Button>
+                                                        <Button
+                                                          type="button"
+                                                          variant="outline"
+                                                          size="sm"
+                                                          onClick={async () => {
+                                                            try {
+                                                              await navigator.clipboard.writeText(rawPassword);
+                                                              toast({ title: "Copied", description: "Password copied to clipboard" });
+                                                            } catch (error) {
+                                                              toast({
+                                                                title: "Copy failed",
+                                                                description: "Unable to copy password",
+                                                                variant: "destructive",
+                                                              });
+                                                            }
+                                                          }}
+                                                        >
+                                                          Copy
+                                                        </Button>
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-muted-foreground">No mail configured</p>
+                                      )}
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">Current Mail Service</p>
+                                        <p className="text-sm text-foreground">{website.current_mail_service || "-"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">Previous Mail Service</p>
+                                        <p className="text-sm text-foreground">{website.previous_mail_service || "-"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">Mail Date Created</p>
+                                        <p className="text-sm text-foreground">{website.date_created || "-"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">Mail Termination Date</p>
+                                        <p className="text-sm text-foreground">{website.termination_date || "-"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">ThinkTech Server</p>
+                                        <p className="text-sm text-foreground">{website.thinktech_server || "-"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted-foreground">Record Created</p>
+                                        <p className="text-sm text-foreground">{format(new Date(website.created_at), "PPpp")}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 pt-2">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startWebsiteEdit(website);
+                                        }}
+                                      >
+                                        <Edit className="w-4 h-4 mr-1" />
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          try {
+                                            await deleteWebsiteDB(website.id);
+                                            toast({ title: "Success", description: "Website deleted" });
+                                            setExpandedWebsiteId((prev) => (prev === website.id ? null : prev));
+                                          } catch (e) {
+                                            toast({ title: "Error", description: "Failed to delete website", variant: "destructive" });
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="w-4 h-4 mr-1" />
+                                        Delete
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
-                          
+
                           {websites.length === 0 && (
                             <p className="text-center text-muted-foreground py-8">No websites added yet</p>
                           )}
-                          
+
                           {websites.length > 5 && (
                             <Button
                               variant="ghost"
