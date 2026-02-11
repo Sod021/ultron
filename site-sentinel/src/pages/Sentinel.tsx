@@ -166,6 +166,7 @@ const Sentinel = () => {
   const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [expandedWebsiteId, setExpandedWebsiteId] = useState<number | null>(null);
   const [visiblePasswordKeys, setVisiblePasswordKeys] = useState<Record<string, boolean>>({});
+  const [submenuOpen, setSubmenuOpen] = useState({ websites: true, reports: true });
   const [websiteSearchQuery, setWebsiteSearchQuery] = useState("");
   const [selectedSearchWebsiteId, setSelectedSearchWebsiteId] = useState<number | null>(null);
   const [autoFilter, setAutoFilter] = useState("all");
@@ -1021,6 +1022,7 @@ const Sentinel = () => {
     { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
+    { id: "issue-tracker", label: "Issue Tracker", icon: AlertTriangle },
   ];
   const displayName = currentUser?.email || "User";
 
@@ -1078,26 +1080,48 @@ const Sentinel = () => {
           <ul className="space-y-2">
             {sidebarItems.map((item) => (
               <li key={item.id}>
-                <button
-                  onClick={() => {
-                    if (isChecking) return;
-                    setActiveTab(item.id);
-                    if (isMobile) setIsMobileNavOpen(false);
-                  }}
-                  disabled={isChecking}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    activeTab === item.id
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
-                  } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg ${
-                    isTablet && isTabletCollapsed ? "justify-center px-0 py-2.5 w-11 h-11 mx-auto gap-0" : ""
-                  }`}
-                  title={item.label}
-                >
-                  <item.icon className="w-5 h-5" />
-                  {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
-                </button>
-                {item.id === "websites" && !(isTablet && isTabletCollapsed) && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      if (isChecking) return;
+                      setActiveTab(item.id);
+                      if (isMobile) setIsMobileNavOpen(false);
+                    }}
+                    disabled={isChecking}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      activeTab === item.id
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""} dark:backdrop-blur-lg ${
+                      isTablet && isTabletCollapsed ? "justify-center px-0 py-2.5 w-11 h-11 mx-auto gap-0" : ""
+                    }`}
+                    title={item.label}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
+                  </button>
+                  {(item.id === "websites" || item.id === "reports") && !(isTablet && isTabletCollapsed) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSubmenuOpen((prev) =>
+                          item.id === "websites"
+                            ? { ...prev, websites: !prev.websites }
+                            : { ...prev, reports: !prev.reports }
+                        )
+                      }
+                      className="h-10 w-10 shrink-0 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      aria-label={item.id === "websites" ? "Toggle websites submenu" : "Toggle reports submenu"}
+                    >
+                      {(item.id === "websites" ? submenuOpen.websites : submenuOpen.reports) ? (
+                        <ChevronDown className="mx-auto h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="mx-auto h-4 w-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
+                {item.id === "websites" && submenuOpen.websites && !(isTablet && isTabletCollapsed) && (
                   <button
                     onClick={() => {
                       if (isChecking) return;
@@ -1115,23 +1139,25 @@ const Sentinel = () => {
                     <span className="font-medium">Add Website</span>
                   </button>
                 )}
-                {item.id === "reports" && !(isTablet && isTabletCollapsed) && (
-                  <button
-                    onClick={() => {
-                      if (isChecking) return;
-                      setActiveTab("report-patcher");
-                      if (isMobile) setIsMobileNavOpen(false);
-                    }}
-                    disabled={isChecking}
-                    className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
-                      activeTab === "report-patcher"
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
-                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <Wrench className="w-4 h-4" />
-                    <span className="font-medium">Report Patcher</span>
-                  </button>
+                {item.id === "reports" && submenuOpen.reports && !(isTablet && isTabletCollapsed) && (
+                  <>
+                    <button
+                      onClick={() => {
+                        if (isChecking) return;
+                        setActiveTab("report-patcher");
+                        if (isMobile) setIsMobileNavOpen(false);
+                      }}
+                      disabled={isChecking}
+                      className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                        activeTab === "report-patcher"
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                      } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      <Wrench className="w-4 h-4" />
+                      <span className="font-medium">Report Patcher</span>
+                    </button>
+                  </>
                 )}
               </li>
             ))}
@@ -2173,6 +2199,20 @@ const Sentinel = () => {
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+            )}
+
+            {activeTab === "issue-tracker" && (
+              <div className="flex min-h-[70vh] items-center justify-center">
+                <button
+                  type="button"
+                  className="group flex flex-col items-center gap-4 rounded-xl border border-dashed border-border px-12 py-14 transition hover:border-primary/50 hover:bg-muted/40"
+                >
+                  <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#1b1f27] shadow-lg shadow-black/20">
+                    <Plus className="h-8 w-8 text-white" />
+                  </span>
+                  <span className="text-xl font-semibold text-foreground">Add Project</span>
+                </button>
               </div>
             )}
 
