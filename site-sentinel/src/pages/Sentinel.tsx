@@ -145,8 +145,7 @@ const Sentinel = () => {
   const [websiteName, setWebsiteName] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [hasWebsiteMail, setHasWebsiteMail] = useState("no");
-  const [websiteMail, setWebsiteMail] = useState("");
-  const [mailPassword, setMailPassword] = useState("");
+  const [mailEntries, setMailEntries] = useState([{ email: "", password: "" }]);
   const [currentMailService, setCurrentMailService] = useState("");
   const [currentMailServiceOther, setCurrentMailServiceOther] = useState("");
   const [previousMailService, setPreviousMailService] = useState("");
@@ -394,8 +393,20 @@ const Sentinel = () => {
     const payload: WebsiteInput = {
       name: websiteName.trim(),
       url: websiteUrl.trim(),
-      website_mail: hasWebsiteMail === "yes" ? websiteMail.trim() || null : null,
-      mail_password: hasWebsiteMail === "yes" ? mailPassword.trim() || null : null,
+      website_mail:
+        hasWebsiteMail === "yes"
+          ? mailEntries
+              .map((entry) => entry.email.trim())
+              .filter((email) => email.length > 0)
+              .join("\n") || null
+          : null,
+      mail_password:
+        hasWebsiteMail === "yes"
+          ? mailEntries
+              .map((entry) => entry.password.trim())
+              .filter((password) => password.length > 0)
+              .join("\n") || null
+          : null,
       current_mail_service:
         hasWebsiteMail === "yes"
           ? normalizeMailServiceValue(currentMailService, currentMailServiceOther)
@@ -420,8 +431,8 @@ const Sentinel = () => {
       }
       setWebsiteName("");
       setWebsiteUrl("");
-      setWebsiteMail("");
-      setMailPassword("");
+      setHasWebsiteMail("no");
+      setMailEntries([{ email: "", password: "" }]);
       setCurrentMailService("");
       setCurrentMailServiceOther("");
       setPreviousMailService("");
@@ -440,8 +451,7 @@ const Sentinel = () => {
     setWebsiteName("");
     setWebsiteUrl("");
     setHasWebsiteMail("no");
-    setWebsiteMail("");
-    setMailPassword("");
+    setMailEntries([{ email: "", password: "" }]);
     setCurrentMailService("");
     setCurrentMailServiceOther("");
     setPreviousMailService("");
@@ -490,8 +500,20 @@ const Sentinel = () => {
       website.thinktech_server
     );
     setHasWebsiteMail(hasMailData ? "yes" : "no");
-    setWebsiteMail(website.website_mail || "");
-    setMailPassword(website.mail_password || "");
+    const emailParts = (website.website_mail || "")
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const passwordParts = (website.mail_password || "")
+      .split("\n")
+      .map((value) => value.trim());
+    const maxEntries = Math.max(emailParts.length, passwordParts.length, 1);
+    setMailEntries(
+      Array.from({ length: maxEntries }).map((_, index) => ({
+        email: emailParts[index] || "",
+        password: passwordParts[index] || "",
+      }))
+    );
     setMailServiceState(website.current_mail_service, setCurrentMailService, setCurrentMailServiceOther);
     setMailServiceState(website.previous_mail_service, setPreviousMailService, setPreviousMailServiceOther);
     setDateCreated(website.date_created || "");
@@ -1417,8 +1439,7 @@ const Sentinel = () => {
                           onValueChange={(value) => {
                             setHasWebsiteMail(value);
                             if (value === "no") {
-                              setWebsiteMail("");
-                              setMailPassword("");
+                              setMailEntries([{ email: "", password: "" }]);
                               setCurrentMailService("");
                               setCurrentMailServiceOther("");
                               setPreviousMailService("");
@@ -1441,31 +1462,69 @@ const Sentinel = () => {
 
                       {hasWebsiteMail === "yes" && (
                         <>
-                          <div className="grid gap-6 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label htmlFor="website-mail">Mail Address</Label>
-                              <Input
-                                id="website-mail"
-                                name="website_mail_optional"
-                                type="email"
-                                autoComplete="off"
-                                value={websiteMail}
-                                onChange={(e) => setWebsiteMail(e.target.value)}
-                                placeholder="admin@example.com"
-                              />
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <Label>Mail Accounts</Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setMailEntries((prev) => [...prev, { email: "", password: "" }])
+                                }
+                              >
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add Mail
+                              </Button>
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="mail-password">Mail Password</Label>
-                              <Input
-                                id="mail-password"
-                                name="website_mail_password_optional"
-                                type="password"
-                                autoComplete="new-password"
-                                value={mailPassword}
-                                onChange={(e) => setMailPassword(e.target.value)}
-                                placeholder="Optional password"
-                              />
-                            </div>
+
+                            {mailEntries.map((entry, index) => (
+                              <div key={`mail-entry-${index}`} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                                <Input
+                                  name={`website_mail_optional_${index}`}
+                                  type="email"
+                                  autoComplete="off"
+                                  value={entry.email}
+                                  onChange={(e) =>
+                                    setMailEntries((prev) =>
+                                      prev.map((item, itemIndex) =>
+                                        itemIndex === index ? { ...item, email: e.target.value } : item
+                                      )
+                                    )
+                                  }
+                                  placeholder="Mail address"
+                                />
+                                <Input
+                                  name={`website_mail_password_optional_${index}`}
+                                  type="password"
+                                  autoComplete="new-password"
+                                  value={entry.password}
+                                  onChange={(e) =>
+                                    setMailEntries((prev) =>
+                                      prev.map((item, itemIndex) =>
+                                        itemIndex === index ? { ...item, password: e.target.value } : item
+                                      )
+                                    )
+                                  }
+                                  placeholder="Mail password"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={mailEntries.length === 1}
+                                  onClick={() =>
+                                    setMailEntries((prev) => {
+                                      if (prev.length === 1) return prev;
+                                      return prev.filter((_, itemIndex) => itemIndex !== index);
+                                    })
+                                  }
+                                  aria-label="Remove mail account"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
                           </div>
 
                           <div className="grid gap-6 md:grid-cols-2">
