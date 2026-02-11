@@ -1021,7 +1021,6 @@ const Sentinel = () => {
     { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
     { id: "websites", label: "Websites", icon: Globe },
     { id: "reports", label: "Reports", icon: FileText },
-    { id: "report-patcher", label: "Report Patcher", icon: Wrench },
   ];
   const displayName = currentUser?.email || "User";
 
@@ -1114,6 +1113,24 @@ const Sentinel = () => {
                   >
                     <Plus className="w-4 h-4" />
                     <span className="font-medium">Add Website</span>
+                  </button>
+                )}
+                {item.id === "reports" && !(isTablet && isTabletCollapsed) && (
+                  <button
+                    onClick={() => {
+                      if (isChecking) return;
+                      setActiveTab("report-patcher");
+                      if (isMobile) setIsMobileNavOpen(false);
+                    }}
+                    disabled={isChecking}
+                    className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      activeTab === "report-patcher"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <Wrench className="w-4 h-4" />
+                    <span className="font-medium">Report Patcher</span>
                   </button>
                 )}
               </li>
