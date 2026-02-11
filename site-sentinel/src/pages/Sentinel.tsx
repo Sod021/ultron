@@ -43,6 +43,39 @@ import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
 import { useAutoChecks, type AutoCheck } from "@/hooks/useAutoChecks";
 import { ReportPatcher } from "@/components/ReportPatcher";
 
+type IssueProject = {
+  id: number;
+  user_id: string;
+  name: string;
+  created_at: string;
+};
+
+type IssueFormState = {
+  date_issued: string;
+  issue: string;
+  issuer: string;
+  revision_type: "New" | "Revert";
+  status: string;
+  developer: string;
+  comment: string;
+  date_fixed: string;
+};
+
+type IssueEntry = {
+  id: number;
+  user_id: string;
+  project_id: number;
+  date_issued: string | null;
+  issue: string | null;
+  issuer: string | null;
+  revision_type: "New" | "Revert";
+  status: string | null;
+  developer: string | null;
+  comment: string | null;
+  date_fixed: string | null;
+  created_at: string;
+};
+
 const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -166,9 +199,32 @@ const Sentinel = () => {
   const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [expandedWebsiteId, setExpandedWebsiteId] = useState<number | null>(null);
   const [visiblePasswordKeys, setVisiblePasswordKeys] = useState<Record<string, boolean>>({});
-  const [submenuOpen, setSubmenuOpen] = useState({ websites: true, reports: true });
+  const [submenuOpen, setSubmenuOpen] = useState({ websites: false, reports: false });
   const [websiteSearchQuery, setWebsiteSearchQuery] = useState("");
   const [selectedSearchWebsiteId, setSelectedSearchWebsiteId] = useState<number | null>(null);
+  const [issueProjects, setIssueProjects] = useState<IssueProject[]>([]);
+  const [issueCountByProject, setIssueCountByProject] = useState<Record<number, number>>({});
+  const [issuesByProject, setIssuesByProject] = useState<Record<number, IssueEntry[]>>({});
+  const [isIssueTrackerLoading, setIsIssueTrackerLoading] = useState(false);
+  const [expandedIssueProjectId, setExpandedIssueProjectId] = useState<number | null>(null);
+  const [selectedIssueProject, setSelectedIssueProject] = useState<IssueProject | null>(null);
+  const [issueFormProject, setIssueFormProject] = useState<IssueProject | null>(null);
+  const [selectedIssueEntry, setSelectedIssueEntry] = useState<IssueEntry | null>(null);
+  const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
+  const [isAddProjectDialogOpen, setIsAddProjectDialogOpen] = useState(false);
+  const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
+  const [projectPendingDelete, setProjectPendingDelete] = useState<IssueProject | null>(null);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [issueForm, setIssueForm] = useState<IssueFormState>({
+    date_issued: "",
+    issue: "",
+    issuer: "",
+    revision_type: "New",
+    status: "",
+    developer: "",
+    comment: "",
+    date_fixed: "",
+  });
   const [autoFilter, setAutoFilter] = useState("all");
   const [autoSearchQuery, setAutoSearchQuery] = useState("");
   const [isAutoSearchOpen, setIsAutoSearchOpen] = useState(false);
@@ -221,6 +277,12 @@ const Sentinel = () => {
       setSelectedSearchWebsiteId(searchedWebsites[0]?.id ?? null);
     }
   }, [normalizedWebsiteSearchQuery, searchedWebsites, selectedSearchWebsiteId]);
+
+  useEffect(() => {
+    if (activeTab === "issue-tracker") {
+      fetchIssueTrackerData();
+    }
+  }, [activeTab]);
   
   // Combined loading state for UI display
   const [isLoading, setIsLoading] = useState({
@@ -1013,6 +1075,244 @@ const Sentinel = () => {
         title: "Error", 
         description: "Failed to clear reports", 
         variant: "destructive" 
+      });
+    }
+  };
+
+  const fetchIssueTrackerData = async () => {
+    setIsIssueTrackerLoading(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setIssueProjects([]);
+        setIssueCountByProject({});
+        setIssuesByProject({});
+        return;
+      }
+
+      const { data: projectsData, error: projectsError } = await supabase
+        .from("issue_projects")
+        .select("id, user_id, name, created_at")
+        .eq("user_id", authData.user.id)
+        .order("created_at", { ascending: false });
+
+      if (projectsError) throw projectsError;
+
+      const projects = (projectsData || []) as IssueProject[];
+      setIssueProjects(projects);
+
+      if (projects.length === 0) {
+        setIssueCountByProject({});
+        setIssuesByProject({});
+        return;
+      }
+
+      const projectIds = projects.map((project) => project.id);
+      const { data: issuesData, error: issuesError } = await supabase
+        .from("issue_tracker_issues")
+        .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
+        .eq("user_id", authData.user.id)
+        .in("project_id", projectIds);
+
+      if (issuesError) throw issuesError;
+
+      const groupedIssues = ((issuesData || []) as IssueEntry[]).reduce<Record<number, IssueEntry[]>>((acc, issue) => {
+        if (!acc[issue.project_id]) acc[issue.project_id] = [];
+        acc[issue.project_id].push(issue);
+        return acc;
+      }, {});
+      setIssuesByProject(groupedIssues);
+
+      const counts = (issuesData || []).reduce<Record<number, number>>((acc, issue) => {
+        const projectId = (issue as IssueEntry).project_id;
+        acc[projectId] = (acc[projectId] || 0) + 1;
+        return acc;
+      }, {});
+      setIssueCountByProject(counts);
+    } catch (error) {
+      console.error("Error loading issue tracker data:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load issue tracker data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsIssueTrackerLoading(false);
+    }
+  };
+
+  const resetIssueForm = () => {
+    setIssueForm({
+      date_issued: "",
+      issue: "",
+      issuer: "",
+      revision_type: "New",
+      status: "",
+      developer: "",
+      comment: "",
+      date_fixed: "",
+    });
+  };
+
+  const openAddProjectDialog = () => {
+    setNewProjectName("");
+    setIsAddProjectDialogOpen(true);
+  };
+
+  const saveIssueProject = async () => {
+    const trimmed = newProjectName.trim();
+    if (!trimmed) {
+      toast({
+        title: "Project name required",
+        description: "Please enter a project name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const { data, error } = await supabase
+        .from("issue_projects")
+        .insert({
+          user_id: authData.user.id,
+          name: trimmed,
+        })
+        .select("id, user_id, name, created_at")
+        .single();
+
+      if (error) throw error;
+
+      setIssueProjects((prev) => [data as IssueProject, ...prev]);
+      setIssueCountByProject((prev) => ({ ...prev, [(data as IssueProject).id]: 0 }));
+      setIsAddProjectDialogOpen(false);
+      setNewProjectName("");
+      toast({
+        title: "Project added",
+        description: `${trimmed} has been created.`,
+      });
+    } catch (error) {
+      console.error("Error creating project:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create project",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openIssueFormDialog = (project: IssueProject) => {
+    setIssueFormProject(project);
+    setSelectedIssueEntry(null);
+    setSelectedIssueNumber(null);
+    resetIssueForm();
+  };
+
+  const saveIssueEntry = async () => {
+    if (!issueFormProject) return;
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const payload = {
+        user_id: authData.user.id,
+        project_id: issueFormProject.id,
+        date_issued: issueForm.date_issued || null,
+        issue: issueForm.issue.trim() || null,
+        issuer: issueForm.issuer.trim() || null,
+        revision_type: issueForm.revision_type,
+        status: issueForm.status.trim() || null,
+        developer: issueForm.developer.trim() || null,
+        comment: issueForm.comment.trim() || null,
+        date_fixed: issueForm.date_fixed || null,
+      };
+
+      const { data, error } = await supabase
+        .from("issue_tracker_issues")
+        .insert(payload)
+        .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
+        .single();
+      if (error) throw error;
+
+      const insertedIssue = data as IssueEntry;
+
+      setIssueCountByProject((prev) => ({
+        ...prev,
+        [issueFormProject.id]: (prev[issueFormProject.id] || 0) + 1,
+      }));
+      setIssuesByProject((prev) => ({
+        ...prev,
+        [issueFormProject.id]: [insertedIssue, ...(prev[issueFormProject.id] || [])],
+      }));
+      setSelectedIssueProject(issueFormProject);
+      setSelectedIssueEntry(insertedIssue);
+      setSelectedIssueNumber(1);
+      setIssueFormProject(null);
+      resetIssueForm();
+      toast({
+        title: "Issue saved",
+        description: `Issue added to ${issueFormProject.name}`,
+      });
+    } catch (error) {
+      console.error("Error saving issue:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save issue",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const requestDeleteProject = (project: IssueProject) => {
+    setProjectPendingDelete(project);
+    setIsDeleteProjectDialogOpen(true);
+  };
+
+  const deleteIssueProject = async () => {
+    if (!projectPendingDelete) return;
+    try {
+      const { error } = await supabase
+        .from("issue_projects")
+        .delete()
+        .eq("id", projectPendingDelete.id);
+      if (error) throw error;
+
+      setIssueProjects((prev) => prev.filter((project) => project.id !== projectPendingDelete.id));
+      setIssueCountByProject((prev) => {
+        const next = { ...prev };
+        delete next[projectPendingDelete.id];
+        return next;
+      });
+      setIssuesByProject((prev) => {
+        const next = { ...prev };
+        delete next[projectPendingDelete.id];
+        return next;
+      });
+      setExpandedIssueProjectId((prev) => (prev === projectPendingDelete.id ? null : prev));
+      setSelectedIssueProject((prev) => (prev?.id === projectPendingDelete.id ? null : prev));
+      setIssueFormProject((prev) => (prev?.id === projectPendingDelete.id ? null : prev));
+      setSelectedIssueEntry((prev) =>
+        prev && prev.project_id === projectPendingDelete.id ? null : prev
+      );
+      setIsDeleteProjectDialogOpen(false);
+      setProjectPendingDelete(null);
+      toast({
+        title: "Project deleted",
+        description: "The project has been removed.",
+      });
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete project",
+        variant: "destructive",
       });
     }
   };
@@ -2203,16 +2503,315 @@ const Sentinel = () => {
             )}
 
             {activeTab === "issue-tracker" && (
-              <div className="flex min-h-[70vh] items-center justify-center">
-                <button
-                  type="button"
-                  className="group flex flex-col items-center gap-4 rounded-xl border border-dashed border-border px-12 py-14 transition hover:border-primary/50 hover:bg-muted/40"
-                >
-                  <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#1b1f27] shadow-lg shadow-black/20">
-                    <Plus className="h-8 w-8 text-white" />
-                  </span>
-                  <span className="text-xl font-semibold text-foreground">Add Project</span>
-                </button>
+              <div className="space-y-6">
+                {isIssueTrackerLoading ? (
+                  <div className="flex min-h-[50vh] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : issueProjects.length === 0 ? (
+                  <div className="flex min-h-[70vh] items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={openAddProjectDialog}
+                      className="group flex flex-col items-center gap-4 rounded-xl border border-dashed border-border px-12 py-14 transition hover:border-primary/50 hover:bg-muted/40"
+                    >
+                      <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#1b1f27] shadow-lg shadow-black/20">
+                        <Plus className="h-8 w-8 text-white" />
+                      </span>
+                      <span className="text-xl font-semibold text-foreground">Add Project</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="space-y-10">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-semibold text-foreground">Projects</h3>
+                          <p className="text-sm text-muted-foreground">Select a project to view its issues</p>
+                        </div>
+                        <Button type="button" onClick={openAddProjectDialog}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Project
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {issueProjects.map((project) => {
+                          const projectIssues = issuesByProject[project.id] || [];
+                          const isExpanded = expandedIssueProjectId === project.id;
+                          return (
+                            <div key={project.id} className="rounded-lg border bg-card overflow-hidden">
+                              <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40">
+                                <button
+                                  type="button"
+                                  className="min-w-0 text-left flex-1"
+                                  onClick={() => {
+                                    setExpandedIssueProjectId((prev) => (prev === project.id ? null : project.id));
+                                    setSelectedIssueEntry(null);
+                                    setSelectedIssueNumber(null);
+                                    setIssueFormProject(null);
+                                  }}
+                                >
+                                  <p className="font-semibold text-foreground">{project.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {projectIssues.length} issue{projectIssues.length === 1 ? "" : "s"}
+                                  </p>
+                                </button>
+                                <div className="flex items-center gap-2 pl-3">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    onClick={() => requestDeleteProject(project)}
+                                    aria-label="Delete project"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-muted"
+                                    onClick={() => {
+                                      setExpandedIssueProjectId((prev) => (prev === project.id ? null : project.id));
+                                      setSelectedIssueEntry(null);
+                                      setIssueFormProject(null);
+                                    }}
+                                    aria-label="Toggle project issues"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                    ) : (
+                                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isExpanded && (
+                                <div className="border-t bg-muted/20 p-4 space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-medium text-muted-foreground">Issues</p>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => openIssueFormDialog(project)}
+                                    >
+                                      <Plus className="h-4 w-4 mr-1" />
+                                      Add Issue
+                                    </Button>
+                                  </div>
+
+                                  {projectIssues.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {projectIssues
+                                        .slice()
+                                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                        .map((issue, index) => (
+                                          (() => {
+                                            const issueNumber = projectIssues.length - index;
+                                            return (
+                                              <button
+                                            key={issue.id}
+                                            type="button"
+                                            className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                                              selectedIssueEntry?.id === issue.id
+                                                ? "border-primary/50 bg-background"
+                                                : "hover:bg-background/80"
+                                            }`}
+                                            onClick={() => {
+                                              if (selectedIssueEntry?.id === issue.id) {
+                                                setSelectedIssueEntry(null);
+                                                setSelectedIssueNumber(null);
+                                                return;
+                                              }
+                                              setSelectedIssueProject(project);
+                                              setSelectedIssueEntry(issue);
+                                              setSelectedIssueNumber(issueNumber);
+                                            }}
+                                          >
+                                            <p className="font-medium text-foreground">
+                                              Issue {issueNumber}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground truncate">
+                                              {issue.issue || "No issue title"}
+                                            </p>
+                                          </button>
+                                            );
+                                          })()
+                                        ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No issues yet for this project.</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {issueFormProject && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>
+                            {issueFormProject.name} - Issue {(issueCountByProject[issueFormProject.id] || 0) + 1}
+                          </CardTitle>
+                          <CardDescription>Fill the issue details below.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-date-issued">Date Issued</Label>
+                              <Input
+                                id="issue-date-issued"
+                                type="date"
+                                value={issueForm.date_issued}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, date_issued: e.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-field">Issue</Label>
+                              <Input
+                                id="issue-field"
+                                value={issueForm.issue}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, issue: e.target.value }))}
+                                placeholder="Describe issue"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-issuer">Issuer</Label>
+                              <Input
+                                id="issue-issuer"
+                                value={issueForm.issuer}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, issuer: e.target.value }))}
+                                placeholder="Who issued this issue"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Revision Type</Label>
+                              <Select
+                                value={issueForm.revision_type}
+                                onValueChange={(value: "New" | "Revert") => setIssueForm((prev) => ({ ...prev, revision_type: value }))}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select revision type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="New">New</SelectItem>
+                                  <SelectItem value="Revert">Revert</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-status">Status</Label>
+                              <Input
+                                id="issue-status"
+                                value={issueForm.status}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, status: e.target.value }))}
+                                placeholder="Current status"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-developer">Developer</Label>
+                              <Input
+                                id="issue-developer"
+                                value={issueForm.developer}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, developer: e.target.value }))}
+                                placeholder="Assigned developer"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="issue-comment">Comment</Label>
+                            <Textarea
+                              id="issue-comment"
+                              value={issueForm.comment}
+                              onChange={(e) => setIssueForm((prev) => ({ ...prev, comment: e.target.value }))}
+                              placeholder="Additional notes"
+                              rows={4}
+                            />
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="issue-date-fixed">Date Fixed</Label>
+                              <Input
+                                id="issue-date-fixed"
+                                type="date"
+                                value={issueForm.date_fixed}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, date_fixed: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-2">
+                            <Button type="button" onClick={saveIssueEntry}>
+                              Save Issue
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setIssueFormProject(null);
+                                resetIssueForm();
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {selectedIssueEntry && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Issue Details</CardTitle>
+                          <CardDescription>
+                            {selectedIssueProject?.name || "Project"} - Issue {selectedIssueNumber ?? "-"}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Date Issued</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.date_issued || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Revision Type</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.revision_type || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Issue</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.issue || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Issuer</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.issuer || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Status</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.status || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Developer</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.developer || "-"}</p>
+                          </div>
+                          <div className="space-y-1 md:col-span-2">
+                            <p className="text-xs text-muted-foreground">Comment</p>
+                            <p className="text-sm font-medium text-foreground whitespace-pre-line">{selectedIssueEntry.comment || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Date Fixed</p>
+                            <p className="text-sm font-medium text-foreground">{selectedIssueEntry.date_fixed || "-"}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Created</p>
+                            <p className="text-sm font-medium text-foreground">{format(new Date(selectedIssueEntry.created_at), "PPpp")}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2940,6 +3539,58 @@ const Sentinel = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={isAddProjectDialogOpen} onOpenChange={setIsAddProjectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add Project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter a project name to create a new Issue Tracker project.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="project-name">Project Name</Label>
+            <Input
+              id="project-name"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="Enter project name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveIssueProject();
+                }
+              }}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button type="button" onClick={saveIssueProject}>
+              Save Project
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isDeleteProjectDialogOpen} onOpenChange={setIsDeleteProjectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {projectPendingDelete
+                ? `This will permanently delete "${projectPendingDelete.name}" and all related issues.`
+                : "This will permanently delete this project and all related issues."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setProjectPendingDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteIssueProject} className="bg-red-600 hover:bg-red-700 text-white">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 };
