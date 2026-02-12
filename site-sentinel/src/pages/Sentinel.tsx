@@ -1416,25 +1416,10 @@ const Sentinel = () => {
 
   const acceptProjectInvite = async (invite: ProjectInvite) => {
     try {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        throw new Error("You must be signed in.");
-      }
-
-      const { error: memberError } = await supabase.from("project_members").upsert({
-        project_id: invite.project_id,
-        user_id: authData.user.id,
-        role: invite.role,
-        permissions: invite.permissions || {},
-        invited_by: invite.invited_by,
+      const { error } = await supabase.rpc("accept_project_invite", {
+        p_invite_id: invite.id,
       });
-      if (memberError) throw memberError;
-
-      const { error: inviteError } = await supabase
-        .from("project_invites")
-        .update({ status: "accepted" })
-        .eq("id", invite.id);
-      if (inviteError) throw inviteError;
+      if (error) throw error;
 
       toast({
         title: "Invite accepted",

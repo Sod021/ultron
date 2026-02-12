@@ -127,6 +127,59 @@ $$;
 grant execute on function public.has_project_permission(bigint, text) to authenticated;
 
 -- ---------------------------------------------------------
+-- Invite acceptance helper (invited user flow)
+-- ---------------------------------------------------------
+create or replace function public.accept_project_invite(p_invite_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_invite public.project_invites%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select *
+  into v_invite
+  from public.project_invites
+  where id = p_invite_id
+    and status = 'pending';
+
+  if not found then
+    raise exception 'Invite not found or no longer pending';
+  end if;
+
+  if lower(v_invite.invited_email::text) <> lower(coalesce(auth.jwt() ->> 'email', '')) then
+    raise exception 'Invite email does not match signed-in user';
+  end if;
+
+  if v_invite.expires_at < now() then
+    update public.project_invites
+    set status = 'expired'
+    where id = v_invite.id;
+    raise exception 'Invite has expired';
+  end if;
+
+  insert into public.project_members (project_id, user_id, role, permissions, invited_by)
+  values (v_invite.project_id, auth.uid(), v_invite.role, coalesce(v_invite.permissions, '{}'::jsonb), v_invite.invited_by)
+  on conflict (project_id, user_id)
+  do update set
+    role = excluded.role,
+    permissions = excluded.permissions,
+    invited_by = excluded.invited_by;
+
+  update public.project_invites
+  set status = 'accepted'
+  where id = v_invite.id;
+end;
+$$;
+
+grant execute on function public.accept_project_invite(bigint) to authenticated;
+
+-- ---------------------------------------------------------
 -- RLS enable
 -- ---------------------------------------------------------
 alter table public.project_members enable row level security;
