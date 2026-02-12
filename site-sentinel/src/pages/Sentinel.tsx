@@ -3297,9 +3297,11 @@ const Sentinel = () => {
                                             {(projectMembersByProject[project.id] || []).map((member) => (
                                               <div key={`${member.project_id}-${member.user_id}`} className="text-sm">
                                                 <span className="font-medium text-foreground">
-                                                  {profileByUserId[member.user_id]?.display_name ||
-                                                    profileByUserId[member.user_id]?.email ||
-                                                    (member.user_id === currentUser?.id ? "You" : `User ${member.user_id.slice(0, 8)}`)}
+                                                  {member.user_id === currentUser?.id
+                                                    ? "You"
+                                                    : profileByUserId[member.user_id]?.display_name ||
+                                                      profileByUserId[member.user_id]?.email ||
+                                                      `User ${member.user_id.slice(0, 8)}`}
                                                 </span>
                                                 <span className="text-muted-foreground"> - {member.role}</span>
                                               </div>
