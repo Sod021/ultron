@@ -166,6 +166,7 @@ const Sentinel = () => {
   const [isTablet, setIsTablet] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isTabletCollapsed, setIsTabletCollapsed] = useState(false);
+  const realtimeRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem("sentinel-theme");
@@ -332,6 +333,52 @@ const Sentinel = () => {
       fetchCollaborationsData();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const scheduleRealtimeRefresh = () => {
+      if (realtimeRefreshTimeoutRef.current) {
+        clearTimeout(realtimeRefreshTimeoutRef.current);
+      }
+      realtimeRefreshTimeoutRef.current = setTimeout(() => {
+        void fetchIssueTrackerData();
+        void fetchCollaborationsData();
+      }, 250);
+    };
+
+    const channel = supabase
+      .channel(`issue-tracker-realtime-${currentUser.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "issue_tracker_issues" },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "issue_projects" },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "project_members" },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "project_invites" },
+        scheduleRealtimeRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeRefreshTimeoutRef.current) {
+        clearTimeout(realtimeRefreshTimeoutRef.current);
+        realtimeRefreshTimeoutRef.current = null;
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [currentUser?.id]);
   
   // Combined loading state for UI display
   const [isLoading, setIsLoading] = useState({
