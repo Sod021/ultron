@@ -97,6 +97,13 @@ type ProjectInvite = {
   expires_at: string;
 };
 
+type CollaborationProject = {
+  project_id: number;
+  role: "admin" | "editor" | "reporter" | "viewer";
+  created_at: string;
+  project: IssueProject;
+};
+
 const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -220,7 +227,7 @@ const Sentinel = () => {
   const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [expandedWebsiteId, setExpandedWebsiteId] = useState<number | null>(null);
   const [visiblePasswordKeys, setVisiblePasswordKeys] = useState<Record<string, boolean>>({});
-  const [submenuOpen, setSubmenuOpen] = useState({ websites: false, reports: false });
+  const [submenuOpen, setSubmenuOpen] = useState({ websites: false, reports: false, issueTracker: false });
   const [websiteSearchQuery, setWebsiteSearchQuery] = useState("");
   const [selectedSearchWebsiteId, setSelectedSearchWebsiteId] = useState<number | null>(null);
   const [issueProjects, setIssueProjects] = useState<IssueProject[]>([]);
@@ -239,6 +246,8 @@ const Sentinel = () => {
   const [projectInvitesByProject, setProjectInvitesByProject] = useState<Record<number, ProjectInvite[]>>({});
   const [myMembershipByProject, setMyMembershipByProject] = useState<Record<number, Pick<ProjectMember, "role" | "permissions">>>({});
   const [myPendingInvites, setMyPendingInvites] = useState<ProjectInvite[]>([]);
+  const [collaborationProjects, setCollaborationProjects] = useState<CollaborationProject[]>([]);
+  const [isCollaborationsLoading, setIsCollaborationsLoading] = useState(false);
   const [isInviteUserDialogOpen, setIsInviteUserDialogOpen] = useState(false);
   const [inviteProject, setInviteProject] = useState<IssueProject | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -313,6 +322,12 @@ const Sentinel = () => {
   useEffect(() => {
     if (activeTab === "issue-tracker") {
       fetchIssueTrackerData();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "collaborations") {
+      fetchCollaborationsData();
     }
   }, [activeTab]);
   
@@ -1145,19 +1160,6 @@ const Sentinel = () => {
         }, {});
       setMyMembershipByProject(myMembershipMap);
 
-      if (authData.user.email) {
-        const { data: pendingInvitesData, error: pendingInvitesError } = await supabase
-          .from("project_invites")
-          .select("id, project_id, invited_email, role, permissions, invited_by, status, created_at, expires_at")
-          .eq("invited_email", authData.user.email)
-          .eq("status", "pending")
-          .order("created_at", { ascending: false });
-        if (pendingInvitesError) throw pendingInvitesError;
-        setMyPendingInvites((pendingInvitesData || []) as ProjectInvite[]);
-      } else {
-        setMyPendingInvites([]);
-      }
-
       if (projects.length === 0) {
         setIssueCountByProject({});
         setIssuesByProject({});
@@ -1288,6 +1290,88 @@ const Sentinel = () => {
         description: "Unable to load project members/invites.",
         variant: "destructive",
       });
+    }
+  };
+
+  const fetchCollaborationsData = async () => {
+    setIsCollaborationsLoading(true);
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setMyPendingInvites([]);
+        setCollaborationProjects([]);
+        return;
+      }
+
+      if (authData.user.email) {
+        const { data: pendingInvitesData, error: pendingInvitesError } = await supabase
+          .from("project_invites")
+          .select("id, project_id, invited_email, role, permissions, invited_by, status, created_at, expires_at")
+          .eq("invited_email", authData.user.email)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (pendingInvitesError) throw pendingInvitesError;
+        setMyPendingInvites((pendingInvitesData || []) as ProjectInvite[]);
+      } else {
+        setMyPendingInvites([]);
+      }
+
+      const { data: membershipsData, error: membershipsError } = await supabase
+        .from("project_members")
+        .select("project_id, role, permissions, created_at, issue_projects(id, user_id, name, created_at)")
+        .eq("user_id", authData.user.id);
+      if (membershipsError) throw membershipsError;
+
+      const membershipMap = ((membershipsData || []) as any[]).reduce<
+        Record<number, Pick<ProjectMember, "role" | "permissions">>
+      >((acc, row) => {
+        acc[row.project_id] = { role: row.role, permissions: row.permissions };
+        return acc;
+      }, {});
+      setMyMembershipByProject((prev) => ({ ...prev, ...membershipMap }));
+
+      const collaborations = ((membershipsData || []) as any[])
+        .filter((row) => row.issue_projects && row.issue_projects.user_id !== authData.user.id)
+        .map((row) => ({
+          project_id: row.project_id,
+          role: row.role,
+          created_at: row.created_at,
+          project: row.issue_projects as IssueProject,
+        })) as CollaborationProject[];
+
+      setCollaborationProjects(collaborations);
+
+      const collabProjectIds = collaborations.map((item) => item.project_id);
+      if (collabProjectIds.length > 0) {
+        const { data: issuesData, error: issuesError } = await supabase
+          .from("issue_tracker_issues")
+          .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
+          .in("project_id", collabProjectIds);
+        if (issuesError) throw issuesError;
+
+        const groupedIssues = ((issuesData || []) as IssueEntry[]).reduce<Record<number, IssueEntry[]>>((acc, issue) => {
+          if (!acc[issue.project_id]) acc[issue.project_id] = [];
+          acc[issue.project_id].push(issue);
+          return acc;
+        }, {});
+
+        const counts = ((issuesData || []) as IssueEntry[]).reduce<Record<number, number>>((acc, issue) => {
+          acc[issue.project_id] = (acc[issue.project_id] || 0) + 1;
+          return acc;
+        }, {});
+
+        setIssuesByProject((prev) => ({ ...prev, ...groupedIssues }));
+        setIssueCountByProject((prev) => ({ ...prev, ...counts }));
+      }
+    } catch (error) {
+      console.error("Error loading collaborations:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load collaboration data",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCollaborationsLoading(false);
     }
   };
 
@@ -1426,6 +1510,7 @@ const Sentinel = () => {
         description: "You now have access to the project.",
       });
       await fetchIssueTrackerData();
+      await fetchCollaborationsData();
     } catch (error) {
       console.error("Error accepting invite:", error);
       toast({
@@ -1750,20 +1835,32 @@ const Sentinel = () => {
                     <item.icon className="w-5 h-5" />
                     {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
                   </button>
-                  {(item.id === "websites" || item.id === "reports") && !(isTablet && isTabletCollapsed) && (
+                  {(item.id === "websites" || item.id === "reports" || item.id === "issue-tracker") && !(isTablet && isTabletCollapsed) && (
                     <button
                       type="button"
                       onClick={() =>
                         setSubmenuOpen((prev) =>
                           item.id === "websites"
                             ? { ...prev, websites: !prev.websites }
+                            : item.id === "issue-tracker"
+                              ? { ...prev, issueTracker: !prev.issueTracker }
                             : { ...prev, reports: !prev.reports }
                         )
                       }
                       className="h-10 w-10 shrink-0 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                      aria-label={item.id === "websites" ? "Toggle websites submenu" : "Toggle reports submenu"}
+                      aria-label={
+                        item.id === "websites"
+                          ? "Toggle websites submenu"
+                          : item.id === "reports"
+                            ? "Toggle reports submenu"
+                            : "Toggle issue tracker submenu"
+                      }
                     >
-                      {(item.id === "websites" ? submenuOpen.websites : submenuOpen.reports) ? (
+                      {(item.id === "websites"
+                        ? submenuOpen.websites
+                        : item.id === "reports"
+                          ? submenuOpen.reports
+                          : submenuOpen.issueTracker) ? (
                         <ChevronDown className="mx-auto h-4 w-4" />
                       ) : (
                         <ChevronRight className="mx-auto h-4 w-4" />
@@ -1808,6 +1905,24 @@ const Sentinel = () => {
                       <span className="font-medium">Report Patcher</span>
                     </button>
                   </>
+                )}
+                {item.id === "issue-tracker" && submenuOpen.issueTracker && !(isTablet && isTabletCollapsed) && (
+                  <button
+                    onClick={() => {
+                      if (isChecking) return;
+                      setActiveTab("collaborations");
+                      if (isMobile) setIsMobileNavOpen(false);
+                    }}
+                    disabled={isChecking}
+                    className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      activeTab === "collaborations"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <User className="w-4 h-4" />
+                    <span className="font-medium">Collaborations</span>
+                  </button>
                 )}
               </li>
             ))}
@@ -2854,29 +2969,6 @@ const Sentinel = () => {
 
             {activeTab === "issue-tracker" && (
               <div className="space-y-6">
-                {myPendingInvites.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Pending Invites</CardTitle>
-                      <CardDescription>Accept invites to collaborate on projects.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      {myPendingInvites.map((invite) => (
-                        <div key={invite.id} className="flex items-center justify-between rounded-md border p-3">
-                          <div>
-                            <p className="font-medium text-foreground">Project #{invite.project_id}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Access: {invite.role} · Expires {format(new Date(invite.expires_at), "PP")}
-                            </p>
-                          </div>
-                          <Button type="button" size="sm" onClick={() => acceptProjectInvite(invite)}>
-                            Accept
-                          </Button>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
                 {isIssueTrackerLoading ? (
                   <div className="flex min-h-[50vh] items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -3270,6 +3362,360 @@ const Sentinel = () => {
                       </Card>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === "collaborations" && (
+              <div className="space-y-6">
+                <h2 className="text-3xl font-bold text-foreground md:hidden">Collaborations</h2>
+                {isCollaborationsLoading ? (
+                  <div className="flex min-h-[40vh] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Invites</CardTitle>
+                        <CardDescription>Pending invites awaiting your acceptance</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {myPendingInvites.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No pending invites.</p>
+                        ) : (
+                          myPendingInvites.map((invite) => (
+                            <div key={invite.id} className="flex items-center justify-between rounded-md border p-3">
+                              <div>
+                                <p className="font-medium text-foreground">Project #{invite.project_id}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  Access: {invite.role} · Expires {format(new Date(invite.expires_at), "PP")}
+                                </p>
+                              </div>
+                              <Button type="button" size="sm" onClick={() => acceptProjectInvite(invite)}>
+                                Accept
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Accepted Collaboration Projects</CardTitle>
+                        <CardDescription>Projects where you can work as a collaborator</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {collaborationProjects.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No collaboration projects yet.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {collaborationProjects.map((membership) => {
+                              const project = membership.project;
+                              const projectIssues = issuesByProject[project.id] || [];
+                              const isExpanded = expandedIssueProjectId === project.id;
+                              return (
+                                <div key={`${membership.project_id}-${membership.project.created_at}`} className="rounded-lg border overflow-hidden">
+                                  <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40">
+                                    <button
+                                      type="button"
+                                      className="min-w-0 text-left flex-1"
+                                      onClick={() => {
+                                        setExpandedIssueProjectId((prev) => {
+                                          const next = prev === project.id ? null : project.id;
+                                          if (next === project.id) {
+                                            fetchProjectAccessData(project);
+                                          }
+                                          return next;
+                                        });
+                                        setSelectedIssueProject(project);
+                                        setSelectedIssueEntry(null);
+                                        setSelectedIssueNumber(null);
+                                        setIssueFormProject(null);
+                                      }}
+                                    >
+                                      <p className="font-semibold text-foreground">{project.name}</p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Role: {membership.role} · {projectIssues.length} issue{projectIssues.length === 1 ? "" : "s"}
+                                      </p>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-muted"
+                                      onClick={() => {
+                                        setExpandedIssueProjectId((prev) => {
+                                          const next = prev === project.id ? null : project.id;
+                                          if (next === project.id) {
+                                            fetchProjectAccessData(project);
+                                          }
+                                          return next;
+                                        });
+                                        setSelectedIssueProject(project);
+                                        setSelectedIssueEntry(null);
+                                        setSelectedIssueNumber(null);
+                                        setIssueFormProject(null);
+                                      }}
+                                      aria-label="Toggle project issues"
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                      ) : (
+                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {isExpanded && (
+                                    <div className="border-t bg-muted/20 p-4 space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-sm font-medium text-muted-foreground">Issues</p>
+                                        {hasProjectPermission(project, "issue.create") && (
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => openIssueFormDialog(project)}
+                                          >
+                                            <Plus className="h-4 w-4 mr-1" />
+                                            Add Issue
+                                          </Button>
+                                        )}
+                                      </div>
+                                      {projectIssues.length > 0 ? (
+                                        <div className="space-y-2">
+                                          {projectIssues
+                                            .slice()
+                                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                            .map((issue, index) => {
+                                              const issueNumber = projectIssues.length - index;
+                                              return (
+                                                <button
+                                                  key={issue.id}
+                                                  type="button"
+                                                  className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                                                    selectedIssueEntry?.id === issue.id
+                                                      ? "border-primary/50 bg-background"
+                                                      : "hover:bg-background/80"
+                                                  }`}
+                                                  onClick={() => {
+                                                    if (selectedIssueEntry?.id === issue.id) {
+                                                      setSelectedIssueEntry(null);
+                                                      setSelectedIssueNumber(null);
+                                                      return;
+                                                    }
+                                                    setSelectedIssueProject(project);
+                                                    setSelectedIssueEntry(issue);
+                                                    setSelectedIssueNumber(issueNumber);
+                                                  }}
+                                                >
+                                                  <p className="font-medium text-foreground">Issue {issueNumber}</p>
+                                                  <p className="text-sm text-muted-foreground truncate">
+                                                    {issue.issue || "No issue title"}
+                                                  </p>
+                                                </button>
+                                              );
+                                            })}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-muted-foreground">No issues yet for this project.</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {issueFormProject && collaborationProjects.some((p) => p.project_id === issueFormProject.id) && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>
+                            {editingIssueId
+                              ? `${issueFormProject.name} - Edit Issue ${selectedIssueNumber ?? ""}`.trim()
+                              : `${issueFormProject.name} - Issue ${(issueCountByProject[issueFormProject.id] || 0) + 1}`}
+                          </CardTitle>
+                          <CardDescription>Fill the issue details below.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-date-issued">Date Issued</Label>
+                              <Input
+                                id="collab-issue-date-issued"
+                                type="date"
+                                value={issueForm.date_issued}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, date_issued: e.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-field">Issue</Label>
+                              <Input
+                                id="collab-issue-field"
+                                value={issueForm.issue}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, issue: e.target.value }))}
+                                placeholder="Describe issue"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-issuer">Issuer</Label>
+                              <Input
+                                id="collab-issue-issuer"
+                                value={issueForm.issuer}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, issuer: e.target.value }))}
+                                placeholder="Who issued this issue"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Revision Type</Label>
+                              <Select
+                                value={issueForm.revision_type}
+                                onValueChange={(value: "New" | "Revert") => setIssueForm((prev) => ({ ...prev, revision_type: value }))}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select revision type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="New">New</SelectItem>
+                                  <SelectItem value="Revert">Revert</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-status">Status</Label>
+                              <Input
+                                id="collab-issue-status"
+                                value={issueForm.status}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, status: e.target.value }))}
+                                placeholder="Current status"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-developer">Developer</Label>
+                              <Input
+                                id="collab-issue-developer"
+                                value={issueForm.developer}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, developer: e.target.value }))}
+                                placeholder="Assigned developer"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="collab-issue-comment">Comment</Label>
+                            <Textarea
+                              id="collab-issue-comment"
+                              value={issueForm.comment}
+                              onChange={(e) => setIssueForm((prev) => ({ ...prev, comment: e.target.value }))}
+                              placeholder="Additional notes"
+                              rows={4}
+                            />
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="collab-issue-date-fixed">Date Fixed</Label>
+                              <Input
+                                id="collab-issue-date-fixed"
+                                type="date"
+                                value={issueForm.date_fixed}
+                                onChange={(e) => setIssueForm((prev) => ({ ...prev, date_fixed: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-2">
+                            <Button type="button" onClick={saveIssueEntry}>
+                              {editingIssueId ? "Update Issue" : "Save Issue"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setIssueFormProject(null);
+                                setEditingIssueId(null);
+                                resetIssueForm();
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {selectedIssueEntry &&
+                      !editingIssueId &&
+                      selectedIssueProject &&
+                      collaborationProjects.some((p) => p.project_id === selectedIssueProject.id) && (
+                        <Card>
+                          <CardHeader>
+                            <div className="flex items-center justify-between gap-2">
+                              <CardTitle>Issue Details</CardTitle>
+                              <div className="flex items-center gap-2">
+                                {hasProjectPermission(selectedIssueProject, "issue.edit") && (
+                                  <Button type="button" variant="outline" size="sm" onClick={startEditingIssue}>
+                                    <Edit className="h-4 w-4 mr-1" />
+                                    Edit Issue
+                                  </Button>
+                                )}
+                                {hasProjectPermission(selectedIssueProject, "issue.delete") && (
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => requestDeleteIssue(selectedIssueEntry)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-1" />
+                                    Delete Issue
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <CardDescription>
+                              {selectedIssueProject.name} - Issue {selectedIssueNumber ?? "-"}
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Date Issued</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.date_issued || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Revision Type</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.revision_type || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Issue</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.issue || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Issuer</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.issuer || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Status</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.status || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Developer</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.developer || "-"}</p>
+                            </div>
+                            <div className="space-y-1 md:col-span-2">
+                              <p className="text-xs text-muted-foreground">Comment</p>
+                              <p className="text-sm font-medium text-foreground whitespace-pre-line">{selectedIssueEntry.comment || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Date Fixed</p>
+                              <p className="text-sm font-medium text-foreground">{selectedIssueEntry.date_fixed || "-"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Created</p>
+                              <p className="text-sm font-medium text-foreground">{format(new Date(selectedIssueEntry.created_at), "PPpp")}</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                  </>
                 )}
               </div>
             )}
