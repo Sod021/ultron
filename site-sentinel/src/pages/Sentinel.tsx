@@ -1172,7 +1172,6 @@ const Sentinel = () => {
       const { data: issuesData, error: issuesError } = await supabase
         .from("issue_tracker_issues")
         .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
-        .eq("user_id", authData.user.id)
         .in("project_id", projectIds);
 
       if (issuesError) throw issuesError;
@@ -1616,11 +1615,20 @@ const Sentinel = () => {
       };
 
       if (editingIssueId) {
+        const updatePayload = {
+          date_issued: payload.date_issued,
+          issue: payload.issue,
+          issuer: payload.issuer,
+          revision_type: payload.revision_type,
+          status: payload.status,
+          developer: payload.developer,
+          comment: payload.comment,
+          date_fixed: payload.date_fixed,
+        };
         const { data, error } = await supabase
           .from("issue_tracker_issues")
-          .update(payload)
+          .update(updatePayload)
           .eq("id", editingIssueId)
-          .eq("user_id", authData.user.id)
           .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
           .single();
         if (error) throw error;
@@ -1735,16 +1743,10 @@ const Sentinel = () => {
     if (!issuePendingDelete) return;
     try {
       const isDeletingSelected = selectedIssueEntry?.id === issuePendingDelete.id;
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        throw new Error("You must be signed in.");
-      }
-
       const { error } = await supabase
         .from("issue_tracker_issues")
         .delete()
-        .eq("id", issuePendingDelete.id)
-        .eq("user_id", authData.user.id);
+        .eq("id", issuePendingDelete.id);
       if (error) throw error;
 
       setIssuesByProject((prev) => ({
