@@ -10,6 +10,46 @@ create extension if not exists citext;
 create extension if not exists "uuid-ossp";
 
 -- ---------------------------------------------------------
+-- User profiles (for display names in collaboration UI)
+-- ---------------------------------------------------------
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email citext,
+  display_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists profiles_email_idx on public.profiles (email);
+
+insert into public.profiles (id, email, display_name)
+select
+  u.id,
+  u.email,
+  coalesce(nullif(u.raw_user_meta_data ->> 'full_name', ''), nullif(u.raw_user_meta_data ->> 'name', ''), split_part(u.email, '@', 1))
+from auth.users u
+on conflict (id) do update
+set
+  email = excluded.email,
+  display_name = coalesce(public.profiles.display_name, excluded.display_name),
+  updated_at = now();
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles_select_authenticated" on public.profiles;
+drop policy if exists "profiles_insert_own" on public.profiles;
+drop policy if exists "profiles_update_own" on public.profiles;
+
+create policy "profiles_select_authenticated" on public.profiles
+for select using (auth.uid() is not null);
+
+create policy "profiles_insert_own" on public.profiles
+for insert with check (id = auth.uid());
+
+create policy "profiles_update_own" on public.profiles
+for update using (id = auth.uid());
+
+-- ---------------------------------------------------------
 -- Memberships
 -- ---------------------------------------------------------
 create table if not exists public.project_members (

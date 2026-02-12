@@ -87,6 +87,12 @@ type ProjectMember = {
   invited_by: string | null;
 };
 
+type UserProfile = {
+  id: string;
+  display_name: string | null;
+  email: string | null;
+};
+
 type ProjectInvite = {
   id: number;
   project_id: number;
@@ -118,6 +124,15 @@ const Sentinel = () => {
         navigate("/", { replace: true });
         return;
       }
+      const displayName =
+        (data.user.user_metadata?.full_name as string | undefined) ||
+        (data.user.user_metadata?.name as string | undefined) ||
+        (data.user.email ? data.user.email.split("@")[0] : "User");
+      await supabase.from("profiles").upsert({
+        id: data.user.id,
+        email: data.user.email ?? null,
+        display_name: displayName,
+      });
       setCurrentUser({ id: data.user.id, email: data.user.email || "User" });
     };
 
@@ -128,6 +143,15 @@ const Sentinel = () => {
         navigate("/", { replace: true });
         return;
       }
+      const displayName =
+        (session.user.user_metadata?.full_name as string | undefined) ||
+        (session.user.user_metadata?.name as string | undefined) ||
+        (session.user.email ? session.user.email.split("@")[0] : "User");
+      void supabase.from("profiles").upsert({
+        id: session.user.id,
+        email: session.user.email ?? null,
+        display_name: displayName,
+      });
       setCurrentUser({ id: session.user.id, email: session.user.email || "User" });
     });
 
@@ -246,6 +270,7 @@ const Sentinel = () => {
   const [isDeleteIssueDialogOpen, setIsDeleteIssueDialogOpen] = useState(false);
   const [issuePendingDelete, setIssuePendingDelete] = useState<IssueEntry | null>(null);
   const [projectMembersByProject, setProjectMembersByProject] = useState<Record<number, ProjectMember[]>>({});
+  const [profileByUserId, setProfileByUserId] = useState<Record<string, UserProfile>>({});
   const [projectInvitesByProject, setProjectInvitesByProject] = useState<Record<number, ProjectInvite[]>>({});
   const [myMembershipByProject, setMyMembershipByProject] = useState<Record<number, Pick<ProjectMember, "role" | "permissions">>>({});
   const [myPendingInvites, setMyPendingInvites] = useState<ProjectInvite[]>([]);
@@ -1341,10 +1366,26 @@ const Sentinel = () => {
         .select("project_id, user_id, role, permissions, created_at, invited_by")
         .eq("project_id", project.id);
       if (membersError) throw membersError;
+      const members = (membersData || []) as ProjectMember[];
       setProjectMembersByProject((prev) => ({
         ...prev,
-        [project.id]: (membersData || []) as ProjectMember[],
+        [project.id]: members,
       }));
+
+      const memberIds = members.map((member) => member.user_id);
+      if (memberIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, display_name, email")
+          .in("id", memberIds);
+        if (!profilesError && profilesData) {
+          const profileMap = (profilesData as UserProfile[]).reduce<Record<string, UserProfile>>((acc, profile) => {
+            acc[profile.id] = profile;
+            return acc;
+          }, {});
+          setProfileByUserId((prev) => ({ ...prev, ...profileMap }));
+        }
+      }
 
       if (canManageMembers) {
         const { data: invitesData, error: invitesError } = await supabase
@@ -3220,7 +3261,11 @@ const Sentinel = () => {
                                           <div className="space-y-2">
                                             {(projectMembersByProject[project.id] || []).map((member) => (
                                               <div key={`${member.project_id}-${member.user_id}`} className="text-sm">
-                                                <span className="font-medium text-foreground">{member.user_id}</span>
+                                                <span className="font-medium text-foreground">
+                                                  {profileByUserId[member.user_id]?.display_name ||
+                                                    profileByUserId[member.user_id]?.email ||
+                                                    (member.user_id === currentUser?.id ? "You" : `User ${member.user_id.slice(0, 8)}`)}
+                                                </span>
                                                 <span className="text-muted-foreground"> - {member.role}</span>
                                               </div>
                                             ))}
