@@ -3253,7 +3253,7 @@ const Sentinel = () => {
                                               <button
                                             key={issue.id}
                                             type="button"
-                                            className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                                            className={`relative w-full rounded-md border px-3 py-2 pb-6 pr-24 text-left transition ${
                                               selectedIssueEntry?.id === issue.id
                                                 ? "border-primary/50 bg-background"
                                                 : "hover:bg-background/80"
@@ -3274,6 +3274,9 @@ const Sentinel = () => {
                                             </p>
                                             <p className="text-sm text-muted-foreground truncate">
                                               {issue.issue || "No issue title"}
+                                            </p>
+                                            <p className="absolute bottom-2 right-3 text-[11px] text-muted-foreground">
+                                              By {getUserDisplayLabel(issue.user_id)}
                                             </p>
                                           </button>
                                             );
