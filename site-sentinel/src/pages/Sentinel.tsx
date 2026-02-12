@@ -76,10 +76,12 @@ type IssueEntry = {
   created_at: string;
 };
 
+type CollaboratorRole = "admin" | "editor" | "viewer";
+
 type ProjectMember = {
   project_id: number;
   user_id: string;
-  role: "admin" | "editor" | "reporter" | "viewer";
+  role: CollaboratorRole;
   permissions: Record<string, boolean> | null;
   created_at: string;
   invited_by: string | null;
@@ -89,7 +91,7 @@ type ProjectInvite = {
   id: number;
   project_id: number;
   invited_email: string;
-  role: "admin" | "editor" | "reporter" | "viewer";
+  role: CollaboratorRole;
   permissions: Record<string, boolean> | null;
   invited_by: string;
   status: "pending" | "accepted" | "revoked" | "expired";
@@ -99,7 +101,7 @@ type ProjectInvite = {
 
 type CollaborationProject = {
   project_id: number;
-  role: "admin" | "editor" | "reporter" | "viewer";
+  role: "admin" | "editor" | "viewer";
   created_at: string;
   project: IssueProject;
 };
@@ -251,7 +253,7 @@ const Sentinel = () => {
   const [isInviteUserDialogOpen, setIsInviteUserDialogOpen] = useState(false);
   const [inviteProject, setInviteProject] = useState<IssueProject | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteAccess, setInviteAccess] = useState<"full" | "partial">("partial");
+  const [inviteRole, setInviteRole] = useState<CollaboratorRole>("viewer");
   const [isAddProjectDialogOpen, setIsAddProjectDialogOpen] = useState(false);
   const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<IssueProject | null>(null);
@@ -1213,14 +1215,30 @@ const Sentinel = () => {
     if (membership.role === "editor") {
       return ["issue.create", "issue.edit", "issue.delete", "issue.status.update", "issue.comment"].includes(permission);
     }
-    if (membership.role === "reporter") {
-      return ["issue.create", "issue.comment"].includes(permission);
-    }
     return false;
   };
 
-  const getAccessPreset = (level: "full" | "partial") => {
-    if (level === "full") {
+  const getRolePreset = (role: CollaboratorRole) => {
+    if (role === "admin") {
+      return {
+        role: "admin" as const,
+        permissions: {
+          "project.view": true,
+          "project.edit": true,
+          "project.delete": true,
+          "member.view": true,
+          "member.invite": true,
+          "member.role.update": true,
+          "member.remove": true,
+          "issue.create": true,
+          "issue.edit": true,
+          "issue.delete": true,
+          "issue.status.update": true,
+          "issue.comment": true,
+        } as Record<string, boolean>,
+      };
+    }
+    if (role === "editor") {
       return {
         role: "editor" as const,
         permissions: {
@@ -1234,16 +1252,30 @@ const Sentinel = () => {
         } as Record<string, boolean>,
       };
     }
+    if (role === "viewer") {
+      return {
+        role: "viewer" as const,
+        permissions: {
+          "project.view": true,
+          "member.view": true,
+          "issue.create": false,
+          "issue.edit": false,
+          "issue.delete": false,
+          "issue.status.update": false,
+          "issue.comment": false,
+        } as Record<string, boolean>,
+      };
+    }
     return {
-      role: "reporter" as const,
+      role: "viewer" as const,
       permissions: {
         "project.view": true,
         "member.view": true,
-        "issue.create": true,
-        "issue.comment": true,
+        "issue.create": false,
         "issue.edit": false,
         "issue.delete": false,
         "issue.status.update": false,
+        "issue.comment": false,
       } as Record<string, boolean>,
     };
   };
@@ -1410,14 +1442,9 @@ const Sentinel = () => {
         throw new Error("You must be signed in.");
       }
 
-      const { data, error } = await supabase
-        .from("issue_projects")
-        .insert({
-          user_id: authData.user.id,
-          name: trimmed,
-        })
-        .select("id, user_id, name, created_at")
-        .single();
+      const { data, error } = await supabase.rpc("create_issue_project", {
+        p_name: trimmed,
+      });
 
       if (error) throw error;
       const project = data as IssueProject;
@@ -1452,7 +1479,7 @@ const Sentinel = () => {
   const openInviteUserDialog = (project: IssueProject) => {
     setInviteProject(project);
     setInviteEmail("");
-    setInviteAccess("partial");
+    setInviteRole("viewer");
     setIsInviteUserDialogOpen(true);
   };
 
@@ -1472,7 +1499,7 @@ const Sentinel = () => {
       if (authError || !authData.user) {
         throw new Error("You must be signed in.");
       }
-      const preset = getAccessPreset(inviteAccess);
+      const preset = getRolePreset(inviteRole);
       const { error } = await supabase.from("project_invites").insert({
         project_id: inviteProject.id,
         invited_email: email,
@@ -1486,7 +1513,7 @@ const Sentinel = () => {
       await fetchProjectAccessData(inviteProject);
       toast({
         title: "Invite sent",
-        description: `${email} invited with ${inviteAccess} access.`,
+        description: `${email} invited as ${inviteRole}.`,
       });
     } catch (error) {
       console.error("Error sending invite:", error);
@@ -4482,7 +4509,7 @@ const Sentinel = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Invite User</AlertDialogTitle>
             <AlertDialogDescription>
-              Add a collaborator with full or partial access for this project.
+              Add a collaborator and assign their project role.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3">
@@ -4497,16 +4524,37 @@ const Sentinel = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label>Access</Label>
-              <Select value={inviteAccess} onValueChange={(value: "full" | "partial") => setInviteAccess(value)}>
+              <Label>Role</Label>
+              <Select value={inviteRole} onValueChange={(value: CollaboratorRole) => setInviteRole(value)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full">Full</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="editor">Editor</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
                 </SelectContent>
               </Select>
+              <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground space-y-1">
+                {inviteRole === "admin" && (
+                  <>
+                    <p className="font-medium text-foreground">Admin</p>
+                    <p>Full control: manage members, invites, projects, and all issues.</p>
+                  </>
+                )}
+                {inviteRole === "editor" && (
+                  <>
+                    <p className="font-medium text-foreground">Editor</p>
+                    <p>Create, edit, delete issues and update statuses. Cannot manage members.</p>
+                  </>
+                )}
+                {inviteRole === "viewer" && (
+                  <>
+                    <p className="font-medium text-foreground">Viewer</p>
+                    <p>Read-only access to project and issue details.</p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <AlertDialogFooter>
@@ -4514,7 +4562,7 @@ const Sentinel = () => {
               onClick={() => {
                 setInviteProject(null);
                 setInviteEmail("");
-                setInviteAccess("partial");
+                setInviteRole("viewer");
               }}
             >
               Cancel
