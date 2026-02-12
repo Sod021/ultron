@@ -76,10 +76,31 @@ type IssueEntry = {
   created_at: string;
 };
 
+type ProjectMember = {
+  project_id: number;
+  user_id: string;
+  role: "admin" | "editor" | "reporter" | "viewer";
+  permissions: Record<string, boolean> | null;
+  created_at: string;
+  invited_by: string | null;
+};
+
+type ProjectInvite = {
+  id: number;
+  project_id: number;
+  invited_email: string;
+  role: "admin" | "editor" | "reporter" | "viewer";
+  permissions: Record<string, boolean> | null;
+  invited_by: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  created_at: string;
+  expires_at: string;
+};
+
 const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [currentUser, setCurrentUser] = useState<{ email: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null);
 
   useEffect(() => {
     const syncUser = async () => {
@@ -88,7 +109,7 @@ const Sentinel = () => {
         navigate("/", { replace: true });
         return;
       }
-      setCurrentUser({ email: data.user.email || "User" });
+      setCurrentUser({ id: data.user.id, email: data.user.email || "User" });
     };
 
     syncUser();
@@ -98,7 +119,7 @@ const Sentinel = () => {
         navigate("/", { replace: true });
         return;
       }
-      setCurrentUser({ email: session.user.email || "User" });
+      setCurrentUser({ id: session.user.id, email: session.user.email || "User" });
     });
 
     return () => {
@@ -214,6 +235,14 @@ const Sentinel = () => {
   const [editingIssueId, setEditingIssueId] = useState<number | null>(null);
   const [isDeleteIssueDialogOpen, setIsDeleteIssueDialogOpen] = useState(false);
   const [issuePendingDelete, setIssuePendingDelete] = useState<IssueEntry | null>(null);
+  const [projectMembersByProject, setProjectMembersByProject] = useState<Record<number, ProjectMember[]>>({});
+  const [projectInvitesByProject, setProjectInvitesByProject] = useState<Record<number, ProjectInvite[]>>({});
+  const [myMembershipByProject, setMyMembershipByProject] = useState<Record<number, Pick<ProjectMember, "role" | "permissions">>>({});
+  const [myPendingInvites, setMyPendingInvites] = useState<ProjectInvite[]>([]);
+  const [isInviteUserDialogOpen, setIsInviteUserDialogOpen] = useState(false);
+  const [inviteProject, setInviteProject] = useState<IssueProject | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteAccess, setInviteAccess] = useState<"full" | "partial">("partial");
   const [isAddProjectDialogOpen, setIsAddProjectDialogOpen] = useState(false);
   const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<IssueProject | null>(null);
@@ -1104,6 +1133,31 @@ const Sentinel = () => {
       const projects = (projectsData || []) as IssueProject[];
       setIssueProjects(projects);
 
+      const { data: myMembershipData, error: myMembershipError } = await supabase
+        .from("project_members")
+        .select("project_id, role, permissions")
+        .eq("user_id", authData.user.id);
+      if (myMembershipError) throw myMembershipError;
+      const myMembershipMap = ((myMembershipData || []) as Pick<ProjectMember, "project_id" | "role" | "permissions">[])
+        .reduce<Record<number, Pick<ProjectMember, "role" | "permissions">>>((acc, item) => {
+          acc[item.project_id] = { role: item.role, permissions: item.permissions };
+          return acc;
+        }, {});
+      setMyMembershipByProject(myMembershipMap);
+
+      if (authData.user.email) {
+        const { data: pendingInvitesData, error: pendingInvitesError } = await supabase
+          .from("project_invites")
+          .select("id, project_id, invited_email, role, permissions, invited_by, status, created_at, expires_at")
+          .eq("invited_email", authData.user.email)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (pendingInvitesError) throw pendingInvitesError;
+        setMyPendingInvites((pendingInvitesData || []) as ProjectInvite[]);
+      } else {
+        setMyPendingInvites([]);
+      }
+
       if (projects.length === 0) {
         setIssueCountByProject({});
         setIssuesByProject({});
@@ -1141,6 +1195,99 @@ const Sentinel = () => {
       });
     } finally {
       setIsIssueTrackerLoading(false);
+    }
+  };
+
+  const hasProjectPermission = (project: IssueProject, permission: string) => {
+    if (currentUser?.id && project.user_id === currentUser.id) return true;
+    const membership = myMembershipByProject[project.id];
+    if (!membership) return false;
+    if (membership.role === "admin") return true;
+
+    const explicit = membership.permissions?.[permission];
+    if (typeof explicit === "boolean") return explicit;
+
+    if (permission === "project.view") return true;
+    if (membership.role === "editor") {
+      return ["issue.create", "issue.edit", "issue.delete", "issue.status.update", "issue.comment"].includes(permission);
+    }
+    if (membership.role === "reporter") {
+      return ["issue.create", "issue.comment"].includes(permission);
+    }
+    return false;
+  };
+
+  const getAccessPreset = (level: "full" | "partial") => {
+    if (level === "full") {
+      return {
+        role: "editor" as const,
+        permissions: {
+          "project.view": true,
+          "member.view": true,
+          "issue.create": true,
+          "issue.edit": true,
+          "issue.delete": true,
+          "issue.status.update": true,
+          "issue.comment": true,
+        } as Record<string, boolean>,
+      };
+    }
+    return {
+      role: "reporter" as const,
+      permissions: {
+        "project.view": true,
+        "member.view": true,
+        "issue.create": true,
+        "issue.comment": true,
+        "issue.edit": false,
+        "issue.delete": false,
+        "issue.status.update": false,
+      } as Record<string, boolean>,
+    };
+  };
+
+  const fetchProjectAccessData = async (project: IssueProject) => {
+    try {
+      const canManageMembers = hasProjectPermission(project, "member.invite");
+      const canViewMembers = hasProjectPermission(project, "member.view");
+      if (!canManageMembers && !canViewMembers) {
+        setProjectMembersByProject((prev) => ({ ...prev, [project.id]: [] }));
+        setProjectInvitesByProject((prev) => ({ ...prev, [project.id]: [] }));
+        return;
+      }
+
+      const { data: membersData, error: membersError } = await supabase
+        .from("project_members")
+        .select("project_id, user_id, role, permissions, created_at, invited_by")
+        .eq("project_id", project.id);
+      if (membersError) throw membersError;
+      setProjectMembersByProject((prev) => ({
+        ...prev,
+        [project.id]: (membersData || []) as ProjectMember[],
+      }));
+
+      if (canManageMembers) {
+        const { data: invitesData, error: invitesError } = await supabase
+          .from("project_invites")
+          .select("id, project_id, invited_email, role, permissions, invited_by, status, created_at, expires_at")
+          .eq("project_id", project.id)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false });
+        if (invitesError) throw invitesError;
+        setProjectInvitesByProject((prev) => ({
+          ...prev,
+          [project.id]: (invitesData || []) as ProjectInvite[],
+        }));
+      } else {
+        setProjectInvitesByProject((prev) => ({ ...prev, [project.id]: [] }));
+      }
+    } catch (error) {
+      console.error("Error loading project access data:", error);
+      toast({
+        title: "Access data error",
+        description: "Unable to load project members/invites.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1189,9 +1336,19 @@ const Sentinel = () => {
         .single();
 
       if (error) throw error;
+      const project = data as IssueProject;
 
-      setIssueProjects((prev) => [data as IssueProject, ...prev]);
-      setIssueCountByProject((prev) => ({ ...prev, [(data as IssueProject).id]: 0 }));
+      await supabase.from("project_members").upsert({
+        project_id: project.id,
+        user_id: authData.user.id,
+        role: "admin",
+        permissions: {},
+        invited_by: authData.user.id,
+      });
+
+      setIssueProjects((prev) => [project, ...prev]);
+      setIssueCountByProject((prev) => ({ ...prev, [project.id]: 0 }));
+      setMyMembershipByProject((prev) => ({ ...prev, [project.id]: { role: "admin", permissions: {} } }));
       setIsAddProjectDialogOpen(false);
       setNewProjectName("");
       toast({
@@ -1203,6 +1360,92 @@ const Sentinel = () => {
       toast({
         title: "Error",
         description: "Failed to create project",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openInviteUserDialog = (project: IssueProject) => {
+    setInviteProject(project);
+    setInviteEmail("");
+    setInviteAccess("partial");
+    setIsInviteUserDialogOpen(true);
+  };
+
+  const saveProjectInvite = async () => {
+    if (!inviteProject) return;
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      toast({
+        title: "Valid email required",
+        description: "Enter a valid email to invite.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error("You must be signed in.");
+      }
+      const preset = getAccessPreset(inviteAccess);
+      const { error } = await supabase.from("project_invites").insert({
+        project_id: inviteProject.id,
+        invited_email: email,
+        role: preset.role,
+        permissions: preset.permissions,
+        invited_by: authData.user.id,
+      });
+      if (error) throw error;
+
+      setIsInviteUserDialogOpen(false);
+      await fetchProjectAccessData(inviteProject);
+      toast({
+        title: "Invite sent",
+        description: `${email} invited with ${inviteAccess} access.`,
+      });
+    } catch (error) {
+      console.error("Error sending invite:", error);
+      toast({
+        title: "Invite failed",
+        description: "Could not send invite.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const acceptProjectInvite = async (invite: ProjectInvite) => {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const { error: memberError } = await supabase.from("project_members").upsert({
+        project_id: invite.project_id,
+        user_id: authData.user.id,
+        role: invite.role,
+        permissions: invite.permissions || {},
+        invited_by: invite.invited_by,
+      });
+      if (memberError) throw memberError;
+
+      const { error: inviteError } = await supabase
+        .from("project_invites")
+        .update({ status: "accepted" })
+        .eq("id", invite.id);
+      if (inviteError) throw inviteError;
+
+      toast({
+        title: "Invite accepted",
+        description: "You now have access to the project.",
+      });
+      await fetchIssueTrackerData();
+    } catch (error) {
+      console.error("Error accepting invite:", error);
+      toast({
+        title: "Accept failed",
+        description: "Unable to accept invite.",
         variant: "destructive",
       });
     }
@@ -1239,6 +1482,22 @@ const Sentinel = () => {
 
   const saveIssueEntry = async () => {
     if (!issueFormProject) return;
+    if (editingIssueId && !hasProjectPermission(issueFormProject, "issue.edit")) {
+      toast({
+        title: "No permission",
+        description: "You don't have permission to edit issues in this project.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!editingIssueId && !hasProjectPermission(issueFormProject, "issue.create")) {
+      toast({
+        title: "No permission",
+        description: "You don't have permission to create issues in this project.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -2610,6 +2869,29 @@ const Sentinel = () => {
 
             {activeTab === "issue-tracker" && (
               <div className="space-y-6">
+                {myPendingInvites.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Pending Invites</CardTitle>
+                      <CardDescription>Accept invites to collaborate on projects.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {myPendingInvites.map((invite) => (
+                        <div key={invite.id} className="flex items-center justify-between rounded-md border p-3">
+                          <div>
+                            <p className="font-medium text-foreground">Project #{invite.project_id}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Access: {invite.role} · Expires {format(new Date(invite.expires_at), "PP")}
+                            </p>
+                          </div>
+                          <Button type="button" size="sm" onClick={() => acceptProjectInvite(invite)}>
+                            Accept
+                          </Button>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
                 {isIssueTrackerLoading ? (
                   <div className="flex min-h-[50vh] items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -2652,10 +2934,17 @@ const Sentinel = () => {
                                   type="button"
                                   className="min-w-0 text-left flex-1"
                                   onClick={() => {
-                                    setExpandedIssueProjectId((prev) => (prev === project.id ? null : project.id));
+                                    setExpandedIssueProjectId((prev) => {
+                                      const next = prev === project.id ? null : project.id;
+                                      if (next === project.id) {
+                                        fetchProjectAccessData(project);
+                                      }
+                                      return next;
+                                    });
                                     setSelectedIssueEntry(null);
                                     setSelectedIssueNumber(null);
                                     setIssueFormProject(null);
+                                    setSelectedIssueProject(project);
                                   }}
                                 >
                                   <p className="font-semibold text-foreground">{project.name}</p>
@@ -2663,24 +2952,33 @@ const Sentinel = () => {
                                     {projectIssues.length} issue{projectIssues.length === 1 ? "" : "s"}
                                   </p>
                                 </button>
-                                <div className="flex items-center gap-2 pl-3">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                    onClick={() => requestDeleteProject(project)}
-                                    aria-label="Delete project"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                  <div className="flex items-center gap-2 pl-3">
+                                    {hasProjectPermission(project, "project.delete") && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive"
+                                        onClick={() => requestDeleteProject(project)}
+                                        aria-label="Delete project"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                   <button
                                     type="button"
                                     className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-muted"
                                     onClick={() => {
-                                      setExpandedIssueProjectId((prev) => (prev === project.id ? null : project.id));
+                                      setExpandedIssueProjectId((prev) => {
+                                        const next = prev === project.id ? null : project.id;
+                                        if (next === project.id) {
+                                          fetchProjectAccessData(project);
+                                        }
+                                        return next;
+                                      });
                                       setSelectedIssueEntry(null);
                                       setIssueFormProject(null);
+                                      setSelectedIssueProject(project);
                                     }}
                                     aria-label="Toggle project issues"
                                   >
@@ -2697,14 +2995,16 @@ const Sentinel = () => {
                                 <div className="border-t bg-muted/20 p-4 space-y-3">
                                   <div className="flex items-center justify-between">
                                     <p className="text-sm font-medium text-muted-foreground">Issues</p>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => openIssueFormDialog(project)}
-                                    >
-                                      <Plus className="h-4 w-4 mr-1" />
-                                      Add Issue
-                                    </Button>
+                                    {hasProjectPermission(project, "issue.create") && (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={() => openIssueFormDialog(project)}
+                                      >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Add Issue
+                                      </Button>
+                                    )}
                                   </div>
 
                                   {projectIssues.length > 0 ? (
@@ -2749,6 +3049,50 @@ const Sentinel = () => {
                                   ) : (
                                     <p className="text-sm text-muted-foreground">No issues yet for this project.</p>
                                   )}
+
+                                  <div className="pt-2 border-t space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-medium text-muted-foreground">Project Access</p>
+                                      {hasProjectPermission(project, "member.invite") && (
+                                        <Button type="button" size="sm" variant="outline" onClick={() => openInviteUserDialog(project)}>
+                                          <Plus className="h-4 w-4 mr-1" />
+                                          Invite User
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <div className="grid gap-3 md:grid-cols-2">
+                                      <div className="rounded-md border bg-background/70 p-3 space-y-2">
+                                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Members</p>
+                                        {(projectMembersByProject[project.id] || []).length > 0 ? (
+                                          <div className="space-y-2">
+                                            {(projectMembersByProject[project.id] || []).map((member) => (
+                                              <div key={`${member.project_id}-${member.user_id}`} className="text-sm">
+                                                <span className="font-medium text-foreground">{member.user_id}</span>
+                                                <span className="text-muted-foreground"> - {member.role}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="text-sm text-muted-foreground">No members loaded.</p>
+                                        )}
+                                      </div>
+                                      <div className="rounded-md border bg-background/70 p-3 space-y-2">
+                                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Pending Invites</p>
+                                        {(projectInvitesByProject[project.id] || []).length > 0 ? (
+                                          <div className="space-y-2">
+                                            {(projectInvitesByProject[project.id] || []).map((invite) => (
+                                              <div key={invite.id} className="text-sm">
+                                                <span className="font-medium text-foreground">{invite.invited_email}</span>
+                                                <span className="text-muted-foreground"> - {invite.role}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="text-sm text-muted-foreground">No pending invites.</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -2877,19 +3221,23 @@ const Sentinel = () => {
                           <div className="flex items-center justify-between gap-2">
                             <CardTitle>Issue Details</CardTitle>
                             <div className="flex items-center gap-2">
-                              <Button type="button" variant="outline" size="sm" onClick={startEditingIssue}>
-                                <Edit className="h-4 w-4 mr-1" />
-                                Edit Issue
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => requestDeleteIssue(selectedIssueEntry)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-1" />
-                                Delete Issue
-                              </Button>
+                              {selectedIssueProject && hasProjectPermission(selectedIssueProject, "issue.edit") && (
+                                <Button type="button" variant="outline" size="sm" onClick={startEditingIssue}>
+                                  <Edit className="h-4 w-4 mr-1" />
+                                  Edit Issue
+                                </Button>
+                              )}
+                              {selectedIssueProject && hasProjectPermission(selectedIssueProject, "issue.delete") && (
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => requestDeleteIssue(selectedIssueEntry)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Delete Issue
+                                </Button>
+                              )}
                             </div>
                           </div>
                           <CardDescription>
@@ -3693,6 +4041,55 @@ const Sentinel = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <Button type="button" onClick={saveIssueProject}>
               Save Project
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isInviteUserDialogOpen} onOpenChange={setIsInviteUserDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Add a collaborator with full or partial access for this project.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Email</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="user@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Access</Label>
+              <Select value={inviteAccess} onValueChange={(value: "full" | "partial") => setInviteAccess(value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">Full</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setInviteProject(null);
+                setInviteEmail("");
+                setInviteAccess("partial");
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <Button type="button" onClick={saveProjectInvite}>
+              Send Invite
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
