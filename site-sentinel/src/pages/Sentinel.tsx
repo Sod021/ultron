@@ -261,6 +261,7 @@ const Sentinel = () => {
   const [issueCountByProject, setIssueCountByProject] = useState<Record<number, number>>({});
   const [issuesByProject, setIssuesByProject] = useState<Record<number, IssueEntry[]>>({});
   const [isIssueTrackerLoading, setIsIssueTrackerLoading] = useState(false);
+  const [isRefreshingIssueTracker, setIsRefreshingIssueTracker] = useState(false);
   const [expandedIssueProjectId, setExpandedIssueProjectId] = useState<number | null>(null);
   const [selectedIssueProject, setSelectedIssueProject] = useState<IssueProject | null>(null);
   const [issueFormProject, setIssueFormProject] = useState<IssueProject | null>(null);
@@ -1869,6 +1870,25 @@ const Sentinel = () => {
     }
   };
 
+  const refreshIssueTrackerProjects = async () => {
+    setIsRefreshingIssueTracker(true);
+    try {
+      await Promise.all([fetchIssueTrackerData(), fetchCollaborationsData()]);
+      toast({
+        title: "Refreshed",
+        description: "Issue Tracker projects are up to date.",
+      });
+    } catch (error) {
+      toast({
+        title: "Refresh failed",
+        description: "Unable to refresh Issue Tracker data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshingIssueTracker(false);
+    }
+  };
+
   const sidebarItems = [
     { id: "dashboard", label: "Manual Checks", icon: ClipboardCheck },
     { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
@@ -3111,10 +3131,25 @@ const Sentinel = () => {
                           <h3 className="text-xl font-semibold text-foreground">Projects</h3>
                           <p className="text-sm text-muted-foreground">Select a project to view its issues</p>
                         </div>
-                        <Button type="button" onClick={openAddProjectDialog}>
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Project
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={refreshIssueTrackerProjects}
+                            disabled={isRefreshingIssueTracker}
+                          >
+                            {isRefreshingIssueTracker ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                            )}
+                            Refresh
+                          </Button>
+                          <Button type="button" onClick={openAddProjectDialog}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Project
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="space-y-3">
