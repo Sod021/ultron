@@ -211,6 +211,9 @@ const Sentinel = () => {
   const [issueFormProject, setIssueFormProject] = useState<IssueProject | null>(null);
   const [selectedIssueEntry, setSelectedIssueEntry] = useState<IssueEntry | null>(null);
   const [selectedIssueNumber, setSelectedIssueNumber] = useState<number | null>(null);
+  const [editingIssueId, setEditingIssueId] = useState<number | null>(null);
+  const [isDeleteIssueDialogOpen, setIsDeleteIssueDialogOpen] = useState(false);
+  const [issuePendingDelete, setIssuePendingDelete] = useState<IssueEntry | null>(null);
   const [isAddProjectDialogOpen, setIsAddProjectDialogOpen] = useState(false);
   const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
   const [projectPendingDelete, setProjectPendingDelete] = useState<IssueProject | null>(null);
@@ -1209,7 +1212,29 @@ const Sentinel = () => {
     setIssueFormProject(project);
     setSelectedIssueEntry(null);
     setSelectedIssueNumber(null);
+    setEditingIssueId(null);
     resetIssueForm();
+  };
+
+  const startEditingIssue = () => {
+    if (!selectedIssueEntry) return;
+    const project =
+      issueProjects.find((item) => item.id === selectedIssueEntry.project_id) ||
+      selectedIssueProject;
+    if (!project) return;
+
+    setIssueFormProject(project);
+    setEditingIssueId(selectedIssueEntry.id);
+    setIssueForm({
+      date_issued: selectedIssueEntry.date_issued || "",
+      issue: selectedIssueEntry.issue || "",
+      issuer: selectedIssueEntry.issuer || "",
+      revision_type: selectedIssueEntry.revision_type || "New",
+      status: selectedIssueEntry.status || "",
+      developer: selectedIssueEntry.developer || "",
+      comment: selectedIssueEntry.comment || "",
+      date_fixed: selectedIssueEntry.date_fixed || "",
+    });
   };
 
   const saveIssueEntry = async () => {
@@ -1234,32 +1259,60 @@ const Sentinel = () => {
         date_fixed: issueForm.date_fixed || null,
       };
 
-      const { data, error } = await supabase
-        .from("issue_tracker_issues")
-        .insert(payload)
-        .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
-        .single();
-      if (error) throw error;
+      if (editingIssueId) {
+        const { data, error } = await supabase
+          .from("issue_tracker_issues")
+          .update(payload)
+          .eq("id", editingIssueId)
+          .eq("user_id", authData.user.id)
+          .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
+          .single();
+        if (error) throw error;
 
-      const insertedIssue = data as IssueEntry;
+        const updatedIssue = data as IssueEntry;
+        setIssuesByProject((prev) => ({
+          ...prev,
+          [issueFormProject.id]: (prev[issueFormProject.id] || []).map((issue) =>
+            issue.id === updatedIssue.id ? updatedIssue : issue
+          ),
+        }));
+        setSelectedIssueProject(issueFormProject);
+        setSelectedIssueEntry(updatedIssue);
+        setIssueFormProject(null);
+        setEditingIssueId(null);
+        resetIssueForm();
+        toast({
+          title: "Issue updated",
+          description: `Issue updated in ${issueFormProject.name}`,
+        });
+      } else {
+        const { data, error } = await supabase
+          .from("issue_tracker_issues")
+          .insert(payload)
+          .select("id, user_id, project_id, date_issued, issue, issuer, revision_type, status, developer, comment, date_fixed, created_at")
+          .single();
+        if (error) throw error;
 
-      setIssueCountByProject((prev) => ({
-        ...prev,
-        [issueFormProject.id]: (prev[issueFormProject.id] || 0) + 1,
-      }));
-      setIssuesByProject((prev) => ({
-        ...prev,
-        [issueFormProject.id]: [insertedIssue, ...(prev[issueFormProject.id] || [])],
-      }));
-      setSelectedIssueProject(issueFormProject);
-      setSelectedIssueEntry(insertedIssue);
-      setSelectedIssueNumber(1);
-      setIssueFormProject(null);
-      resetIssueForm();
-      toast({
-        title: "Issue saved",
-        description: `Issue added to ${issueFormProject.name}`,
-      });
+        const insertedIssue = data as IssueEntry;
+
+        setIssueCountByProject((prev) => ({
+          ...prev,
+          [issueFormProject.id]: (prev[issueFormProject.id] || 0) + 1,
+        }));
+        setIssuesByProject((prev) => ({
+          ...prev,
+          [issueFormProject.id]: [insertedIssue, ...(prev[issueFormProject.id] || [])],
+        }));
+        setSelectedIssueProject(issueFormProject);
+        setSelectedIssueEntry(insertedIssue);
+        setSelectedIssueNumber(1);
+        setIssueFormProject(null);
+        resetIssueForm();
+        toast({
+          title: "Issue saved",
+          description: `Issue added to ${issueFormProject.name}`,
+        });
+      }
     } catch (error) {
       console.error("Error saving issue:", error);
       toast({
@@ -1312,6 +1365,59 @@ const Sentinel = () => {
       toast({
         title: "Error",
         description: "Failed to delete project",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const requestDeleteIssue = (issue: IssueEntry) => {
+    setIssuePendingDelete(issue);
+    setIsDeleteIssueDialogOpen(true);
+  };
+
+  const deleteIssueEntry = async () => {
+    if (!issuePendingDelete) return;
+    try {
+      const isDeletingSelected = selectedIssueEntry?.id === issuePendingDelete.id;
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error("You must be signed in.");
+      }
+
+      const { error } = await supabase
+        .from("issue_tracker_issues")
+        .delete()
+        .eq("id", issuePendingDelete.id)
+        .eq("user_id", authData.user.id);
+      if (error) throw error;
+
+      setIssuesByProject((prev) => ({
+        ...prev,
+        [issuePendingDelete.project_id]: (prev[issuePendingDelete.project_id] || []).filter(
+          (issue) => issue.id !== issuePendingDelete.id
+        ),
+      }));
+      setIssueCountByProject((prev) => ({
+        ...prev,
+        [issuePendingDelete.project_id]: Math.max((prev[issuePendingDelete.project_id] || 1) - 1, 0),
+      }));
+
+      setSelectedIssueEntry((prev) => (prev?.id === issuePendingDelete.id ? null : prev));
+      setSelectedIssueNumber((prev) => (isDeletingSelected ? null : prev));
+      setEditingIssueId((prev) => (prev === issuePendingDelete.id ? null : prev));
+      setIssueFormProject((prev) => (prev?.id === issuePendingDelete.project_id ? null : prev));
+      setIsDeleteIssueDialogOpen(false);
+      setIssuePendingDelete(null);
+
+      toast({
+        title: "Issue deleted",
+        description: "The issue has been removed.",
+      });
+    } catch (error) {
+      console.error("Error deleting issue:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete issue",
         variant: "destructive",
       });
     }
@@ -2655,7 +2761,9 @@ const Sentinel = () => {
                       <Card>
                         <CardHeader>
                           <CardTitle>
-                            {issueFormProject.name} - Issue {(issueCountByProject[issueFormProject.id] || 0) + 1}
+                            {editingIssueId
+                              ? `${issueFormProject.name} - Edit Issue ${selectedIssueNumber ?? ""}`.trim()
+                              : `${issueFormProject.name} - Issue ${(issueCountByProject[issueFormProject.id] || 0) + 1}`}
                           </CardTitle>
                           <CardDescription>Fill the issue details below.</CardDescription>
                         </CardHeader>
@@ -2745,13 +2853,14 @@ const Sentinel = () => {
                           </div>
                           <div className="flex flex-wrap gap-2 pt-2">
                             <Button type="button" onClick={saveIssueEntry}>
-                              Save Issue
+                              {editingIssueId ? "Update Issue" : "Save Issue"}
                             </Button>
                             <Button
                               type="button"
                               variant="outline"
                               onClick={() => {
                                 setIssueFormProject(null);
+                                setEditingIssueId(null);
                                 resetIssueForm();
                               }}
                             >
@@ -2762,10 +2871,27 @@ const Sentinel = () => {
                       </Card>
                     )}
 
-                    {selectedIssueEntry && (
+                    {selectedIssueEntry && !editingIssueId && (
                       <Card>
                         <CardHeader>
-                          <CardTitle>Issue Details</CardTitle>
+                          <div className="flex items-center justify-between gap-2">
+                            <CardTitle>Issue Details</CardTitle>
+                            <div className="flex items-center gap-2">
+                              <Button type="button" variant="outline" size="sm" onClick={startEditingIssue}>
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit Issue
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => requestDeleteIssue(selectedIssueEntry)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete Issue
+                              </Button>
+                            </div>
+                          </div>
                           <CardDescription>
                             {selectedIssueProject?.name || "Project"} - Issue {selectedIssueNumber ?? "-"}
                           </CardDescription>
@@ -3585,6 +3711,23 @@ const Sentinel = () => {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setProjectPendingDelete(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={deleteIssueProject} className="bg-red-600 hover:bg-red-700 text-white">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isDeleteIssueDialogOpen} onOpenChange={setIsDeleteIssueDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Issue?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected issue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIssuePendingDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteIssueEntry} className="bg-red-600 hover:bg-red-700 text-white">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
