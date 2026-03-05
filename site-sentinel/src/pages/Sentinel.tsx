@@ -91,6 +91,7 @@ type UserProfile = {
   id: string;
   display_name: string | null;
   email: string | null;
+  role?: string | null;
 };
 
 type ProjectInvite = {
@@ -112,15 +113,84 @@ type CollaborationProject = {
   project: IssueProject;
 };
 
+type DailyKpiEntry = {
+  goals: string | null;
+  tasks: string | null;
+  achievements: string | null;
+  challenges: string | null;
+  blockers: string | null;
+};
+
+type DailyKpiDraft = {
+  goals: string;
+  tasks: string;
+  achievements: string;
+  challenges: string;
+  blockers: string;
+};
+
+type DailyKpiReportRow = DailyKpiEntry & {
+  id: number;
+  profile_id: string;
+  entry_date: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type KpiProfileLookup = {
+  id: string;
+  display_name: string | null;
+  email: string | null;
+};
+
+type AdminKpiReportRow = DailyKpiReportRow & {
+  display_name: string | null;
+  email: string | null;
+};
+
+type AdminSubmissionTrendPoint = {
+  date: string;
+  label: string;
+  count: number;
+};
+
+type AdminHourlyHeatPoint = {
+  hour: number;
+  count: number;
+};
+
+type AdminTopPerformer = {
+  profile_id: string;
+  display_name: string | null;
+  email: string | null;
+  submittedDays: number;
+  totalSubmissions: number;
+};
+
 const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null);
+  const [profileRole, setProfileRole] = useState<string | null>(null);
+  const [isRoleLoading, setIsRoleLoading] = useState(true);
+  const isPlatformAdmin = profileRole?.toLowerCase() === "admin";
 
   useEffect(() => {
+    const loadProfileRole = async (userId: string) => {
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+      setProfileRole((profileData as { role?: string | null } | null)?.role ?? null);
+      setIsRoleLoading(false);
+    };
+
     const syncUser = async () => {
+      setIsRoleLoading(true);
       const { data } = await supabase.auth.getUser();
       if (!data.user) {
+        setIsRoleLoading(false);
         navigate("/", { replace: true });
         return;
       }
@@ -134,15 +204,19 @@ const Sentinel = () => {
         display_name: displayName,
       });
       setCurrentUser({ id: data.user.id, email: data.user.email || "User" });
+      await loadProfileRole(data.user.id);
     };
 
     syncUser();
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        setProfileRole(null);
+        setIsRoleLoading(false);
         navigate("/", { replace: true });
         return;
       }
+      setIsRoleLoading(true);
       const displayName =
         (session.user.user_metadata?.full_name as string | undefined) ||
         (session.user.user_metadata?.name as string | undefined) ||
@@ -152,6 +226,9 @@ const Sentinel = () => {
         email: session.user.email ?? null,
         display_name: displayName,
       });
+      void (async () => {
+        await loadProfileRole(session.user.id);
+      })();
       setCurrentUser({ id: session.user.id, email: session.user.email || "User" });
     });
 
@@ -254,7 +331,7 @@ const Sentinel = () => {
   const [showAllWebsites, setShowAllWebsites] = useState(false);
   const [expandedWebsiteId, setExpandedWebsiteId] = useState<number | null>(null);
   const [visiblePasswordKeys, setVisiblePasswordKeys] = useState<Record<string, boolean>>({});
-  const [submenuOpen, setSubmenuOpen] = useState({ websites: false, reports: false, issueTracker: false });
+  const [submenuOpen, setSubmenuOpen] = useState({ websites: false, reports: false, issueTracker: false, dailyKpis: false });
   const [websiteSearchQuery, setWebsiteSearchQuery] = useState("");
   const [selectedSearchWebsiteId, setSelectedSearchWebsiteId] = useState<number | null>(null);
   const [issueProjects, setIssueProjects] = useState<IssueProject[]>([]);
@@ -299,6 +376,36 @@ const Sentinel = () => {
   const [autoSearchQuery, setAutoSearchQuery] = useState("");
   const [isAutoSearchOpen, setIsAutoSearchOpen] = useState(false);
   const [showAllAutoIssues, setShowAllAutoIssues] = useState(false);
+  const [kpiEntryDate, setKpiEntryDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [kpiGoals, setKpiGoals] = useState("");
+  const [kpiTasks, setKpiTasks] = useState("");
+  const [kpiAchievements, setKpiAchievements] = useState("");
+  const [kpiChallenges, setKpiChallenges] = useState("");
+  const [kpiBlockers, setKpiBlockers] = useState("");
+  const [isDailyKpiLoading, setIsDailyKpiLoading] = useState(false);
+  const [isDailyKpiSaving, setIsDailyKpiSaving] = useState(false);
+  const [dailyKpiRecordId, setDailyKpiRecordId] = useState<number | null>(null);
+  const [isDailyKpiEditMode, setIsDailyKpiEditMode] = useState(false);
+  const [adminKpiDate, setAdminKpiDate] = useState<Date>(new Date());
+  const [adminKpiReports, setAdminKpiReports] = useState<AdminKpiReportRow[]>([]);
+  const [isAdminKpiLoading, setIsAdminKpiLoading] = useState(false);
+  const [expandedAdminKpiIds, setExpandedAdminKpiIds] = useState<Record<number, boolean>>({});
+  const [isAdminDashboardLoading, setIsAdminDashboardLoading] = useState(false);
+  const [adminTotalUsers, setAdminTotalUsers] = useState(0);
+  const [adminActiveUsers7d, setAdminActiveUsers7d] = useState(0);
+  const [adminSubmissionsToday, setAdminSubmissionsToday] = useState(0);
+  const [adminSubmissionRateToday, setAdminSubmissionRateToday] = useState(0);
+  const [adminMissingToday, setAdminMissingToday] = useState(0);
+  const [adminSubmissionTrend, setAdminSubmissionTrend] = useState<AdminSubmissionTrendPoint[]>([]);
+  const [adminHourlyHeatmap, setAdminHourlyHeatmap] = useState<AdminHourlyHeatPoint[]>([]);
+  const [adminTopPerformers, setAdminTopPerformers] = useState<AdminTopPerformer[]>([]);
+  const [adminMissingUsers, setAdminMissingUsers] = useState<KpiProfileLookup[]>([]);
+  const [myKpiDate, setMyKpiDate] = useState<Date>(new Date());
+  const [myKpiReports, setMyKpiReports] = useState<DailyKpiReportRow[]>([]);
+  const [isMyKpiLoading, setIsMyKpiLoading] = useState(false);
+  const [editingMyKpiIds, setEditingMyKpiIds] = useState<Record<number, boolean>>({});
+  const [myKpiDraftById, setMyKpiDraftById] = useState<Record<number, DailyKpiDraft>>({});
+  const [savingMyKpiIds, setSavingMyKpiIds] = useState<Record<number, boolean>>({});
 
   const { autoChecks, isLoading: autoChecksLoading, runAutoChecksNow, fetchAutoChecks } = useAutoChecks();
   const autoLastRun = autoChecks[0]?.checked_at;
@@ -359,6 +466,394 @@ const Sentinel = () => {
       fetchCollaborationsData();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (isPlatformAdmin) {
+      if (activeTab !== "dashboard" && activeTab !== "report") {
+        setActiveTab("dashboard");
+      }
+      return;
+    }
+    if (activeTab === "report") {
+      setActiveTab("dashboard");
+    }
+  }, [activeTab, isPlatformAdmin]);
+
+  const loadDailyKpi = useCallback(async () => {
+    if (!currentUser?.id) return;
+    setIsDailyKpiLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("daily_kpis")
+        .select("id, goals, tasks, achievements, challenges, blockers")
+        .eq("profile_id", currentUser.id)
+        .eq("entry_date", kpiEntryDate)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const row = (data as DailyKpiEntry | null) ?? null;
+      setDailyKpiRecordId((data as { id?: number } | null)?.id ?? null);
+      setKpiGoals(row?.goals || "");
+      setKpiTasks(row?.tasks || "");
+      setKpiAchievements(row?.achievements || "");
+      setKpiChallenges(row?.challenges || "");
+      setKpiBlockers(row?.blockers || "");
+      setIsDailyKpiEditMode(!data);
+    } catch (error) {
+      console.error("Error loading daily KPI:", error);
+      toast({
+        title: "Load failed",
+        description: "Unable to load daily KPI data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDailyKpiLoading(false);
+    }
+  }, [currentUser?.id, kpiEntryDate, toast]);
+
+  useEffect(() => {
+    if (isPlatformAdmin || activeTab !== "daily-kpis") return;
+    if (!currentUser?.id) return;
+    void loadDailyKpi();
+  }, [activeTab, currentUser?.id, isPlatformAdmin, loadDailyKpi]);
+
+  const saveDailyKpi = async () => {
+    if (!currentUser?.id) return;
+    setIsDailyKpiSaving(true);
+    try {
+      const { data, error } = await supabase.from("daily_kpis").upsert(
+        {
+          profile_id: currentUser.id,
+          entry_date: kpiEntryDate,
+          goals: kpiGoals.trim() || null,
+          tasks: kpiTasks.trim() || null,
+          achievements: kpiAchievements.trim() || null,
+          challenges: kpiChallenges.trim() || null,
+          blockers: kpiBlockers.trim() || null,
+        },
+        { onConflict: "profile_id,entry_date" }
+      ).select("id").maybeSingle();
+      if (error) throw error;
+      setDailyKpiRecordId((data as { id?: number } | null)?.id ?? dailyKpiRecordId);
+      setIsDailyKpiEditMode(false);
+      toast({
+        title: "Saved",
+        description: "Daily KPI has been saved.",
+      });
+    } catch (error) {
+      console.error("Error saving daily KPI:", error);
+      toast({
+        title: "Save failed",
+        description: "Unable to save daily KPI data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDailyKpiSaving(false);
+    }
+  };
+
+  const fetchAdminKpiReports = useCallback(async () => {
+    setIsAdminKpiLoading(true);
+    try {
+      const rangeStart = new Date(adminKpiDate);
+      rangeStart.setHours(0, 0, 0, 0);
+      const rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeEnd.getDate() + 1);
+      const { data: kpiData, error: kpiError } = await supabase
+        .from("daily_kpis")
+        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .gte("updated_at", rangeStart.toISOString())
+        .lt("updated_at", rangeEnd.toISOString())
+        .order("updated_at", { ascending: false });
+      if (kpiError) throw kpiError;
+
+      const rows = (kpiData || []) as DailyKpiReportRow[];
+      if (rows.length === 0) {
+        setAdminKpiReports([]);
+        return;
+      }
+
+      const profileIds = Array.from(new Set(rows.map((row) => row.profile_id)));
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, display_name, email")
+        .in("id", profileIds);
+      if (profilesError) throw profilesError;
+
+      const profileMap = ((profilesData || []) as KpiProfileLookup[]).reduce<Record<string, KpiProfileLookup>>((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {});
+
+      setAdminKpiReports(
+        rows.map((row) => ({
+          ...row,
+          display_name: profileMap[row.profile_id]?.display_name ?? null,
+          email: profileMap[row.profile_id]?.email ?? null,
+        }))
+      );
+    } catch (error) {
+      console.error("Error loading admin KPI reports:", error);
+      toast({
+        title: "Load failed",
+        description: "Unable to load KPI reports for the selected date.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAdminKpiLoading(false);
+    }
+  }, [adminKpiDate, toast]);
+
+  const fetchAdminDashboardData = useCallback(async () => {
+    setIsAdminDashboardLoading(true);
+    try {
+      const now = new Date();
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
+      const sevenDayStart = new Date(todayStart);
+      sevenDayStart.setDate(sevenDayStart.getDate() - 6);
+
+      const thirtyDayStart = new Date(todayStart);
+      thirtyDayStart.setDate(thirtyDayStart.getDate() - 29);
+
+      const [{ data: profilesData, error: profilesError }, { data: kpisData, error: kpisError }] = await Promise.all([
+        supabase.from("profiles").select("id, display_name, email"),
+        supabase
+          .from("daily_kpis")
+          .select("id, profile_id, updated_at")
+          .gte("updated_at", thirtyDayStart.toISOString()),
+      ]);
+      if (profilesError) throw profilesError;
+      if (kpisError) throw kpisError;
+
+      const profiles = (profilesData || []) as KpiProfileLookup[];
+      const kpis = ((kpisData || []) as Array<{ id: number; profile_id: string; updated_at: string }>).filter((row) =>
+        Boolean(row.updated_at)
+      );
+
+      const totalUsers = profiles.length;
+      const in7Days = kpis.filter((row) => new Date(row.updated_at) >= sevenDayStart);
+      const todayRows = kpis.filter((row) => {
+        const d = new Date(row.updated_at);
+        return d >= todayStart && d < tomorrowStart;
+      });
+
+      const activeUsers7d = new Set(in7Days.map((row) => row.profile_id)).size;
+      const todaySubmitterIds = new Set(todayRows.map((row) => row.profile_id));
+      const todaySubmitters = todaySubmitterIds.size;
+      const submissionsToday = todayRows.length;
+      const submissionRateToday = totalUsers > 0 ? Math.round((todaySubmitters / totalUsers) * 100) : 0;
+      const missingToday = Math.max(totalUsers - todaySubmitters, 0);
+      const missingUsers = profiles
+        .filter((profile) => !todaySubmitterIds.has(profile.id))
+        .sort((a, b) => {
+          const aName = (a.display_name || a.email || "").toLowerCase();
+          const bName = (b.display_name || b.email || "").toLowerCase();
+          return aName.localeCompare(bName);
+        });
+
+      const trendCounts: Record<string, number> = {};
+      kpis.forEach((row) => {
+        const key = format(new Date(row.updated_at), "yyyy-MM-dd");
+        trendCounts[key] = (trendCounts[key] || 0) + 1;
+      });
+      const trend: AdminSubmissionTrendPoint[] = Array.from({ length: 30 }).map((_, idx) => {
+        const date = new Date(thirtyDayStart);
+        date.setDate(thirtyDayStart.getDate() + idx);
+        const key = format(date, "yyyy-MM-dd");
+        return {
+          date: key,
+          label: format(date, "MMM d"),
+          count: trendCounts[key] || 0,
+        };
+      });
+
+      const hourCounts = Array.from({ length: 24 }).map(() => 0);
+      kpis.forEach((row) => {
+        const hour = new Date(row.updated_at).getHours();
+        hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+      });
+      const hourlyHeatmap: AdminHourlyHeatPoint[] = hourCounts.map((count, hour) => ({ hour, count }));
+
+      const profileById = profiles.reduce<Record<string, KpiProfileLookup>>((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {});
+      const performerMap = kpis.reduce<
+        Record<string, { profile_id: string; totalSubmissions: number; days: Set<string> }>
+      >((acc, row) => {
+        if (!acc[row.profile_id]) {
+          acc[row.profile_id] = { profile_id: row.profile_id, totalSubmissions: 0, days: new Set<string>() };
+        }
+        acc[row.profile_id].totalSubmissions += 1;
+        acc[row.profile_id].days.add(format(new Date(row.updated_at), "yyyy-MM-dd"));
+        return acc;
+      }, {});
+      const topPerformers = Object.values(performerMap)
+        .map((item) => ({
+          profile_id: item.profile_id,
+          display_name: profileById[item.profile_id]?.display_name ?? null,
+          email: profileById[item.profile_id]?.email ?? null,
+          submittedDays: item.days.size,
+          totalSubmissions: item.totalSubmissions,
+        }))
+        .sort((a, b) => {
+          if (b.submittedDays !== a.submittedDays) return b.submittedDays - a.submittedDays;
+          return b.totalSubmissions - a.totalSubmissions;
+        })
+        .slice(0, 5);
+
+      setAdminTotalUsers(totalUsers);
+      setAdminActiveUsers7d(activeUsers7d);
+      setAdminSubmissionsToday(submissionsToday);
+      setAdminSubmissionRateToday(submissionRateToday);
+      setAdminMissingToday(missingToday);
+      setAdminMissingUsers(missingUsers);
+      setAdminSubmissionTrend(trend);
+      setAdminHourlyHeatmap(hourlyHeatmap);
+      setAdminTopPerformers(topPerformers);
+    } catch (error) {
+      console.error("Error loading admin dashboard data:", error);
+      toast({
+        title: "Load failed",
+        description: "Unable to load admin dashboard metrics.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAdminDashboardLoading(false);
+    }
+  }, [toast]);
+
+  const isDailyKpiReadOnly = dailyKpiRecordId !== null && !isDailyKpiEditMode;
+
+  const fetchMyKpiReports = useCallback(async () => {
+    if (!currentUser?.id) return;
+    setIsMyKpiLoading(true);
+    try {
+      const selectedDate = format(myKpiDate, "yyyy-MM-dd");
+      const { data, error } = await supabase
+        .from("daily_kpis")
+        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .eq("profile_id", currentUser.id)
+        .eq("entry_date", selectedDate)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      setMyKpiReports((data || []) as DailyKpiReportRow[]);
+    } catch (error) {
+      console.error("Error loading my KPI reports:", error);
+      toast({
+        title: "Load failed",
+        description: "Unable to load your KPI entries for the selected date.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsMyKpiLoading(false);
+    }
+  }, [currentUser?.id, myKpiDate, toast]);
+
+  useEffect(() => {
+    if (!isPlatformAdmin || activeTab !== "report") return;
+    void fetchAdminKpiReports();
+  }, [activeTab, isPlatformAdmin, fetchAdminKpiReports]);
+
+  useEffect(() => {
+    if (!isPlatformAdmin || activeTab !== "dashboard") return;
+    void fetchAdminDashboardData();
+  }, [activeTab, isPlatformAdmin, fetchAdminDashboardData]);
+
+  useEffect(() => {
+    if (isPlatformAdmin || activeTab !== "my-kpis") return;
+    void fetchMyKpiReports();
+  }, [activeTab, isPlatformAdmin, fetchMyKpiReports]);
+
+  useEffect(() => {
+    if (myKpiReports.length === 0) return;
+    setMyKpiDraftById((prev) => {
+      const next = { ...prev };
+      myKpiReports.forEach((item) => {
+        if (!next[item.id]) {
+          next[item.id] = {
+            goals: item.goals || "",
+            tasks: item.tasks || "",
+            achievements: item.achievements || "",
+            challenges: item.challenges || "",
+            blockers: item.blockers || "",
+          };
+        }
+      });
+      return next;
+    });
+  }, [myKpiReports]);
+
+  const beginEditMyKpi = (item: DailyKpiReportRow) => {
+    setMyKpiDraftById((prev) => ({
+      ...prev,
+      [item.id]: {
+        goals: item.goals || "",
+        tasks: item.tasks || "",
+        achievements: item.achievements || "",
+        challenges: item.challenges || "",
+        blockers: item.blockers || "",
+      },
+    }));
+    setEditingMyKpiIds((prev) => ({ ...prev, [item.id]: true }));
+  };
+
+  const cancelEditMyKpi = (itemId: number) => {
+    setEditingMyKpiIds((prev) => ({ ...prev, [itemId]: false }));
+  };
+
+  const saveMyKpiEdit = async (itemId: number) => {
+    if (!currentUser?.id) return;
+    const draft = myKpiDraftById[itemId];
+    if (!draft) return;
+
+    setSavingMyKpiIds((prev) => ({ ...prev, [itemId]: true }));
+    try {
+      const payload = {
+        goals: draft.goals.trim() || null,
+        tasks: draft.tasks.trim() || null,
+        achievements: draft.achievements.trim() || null,
+        challenges: draft.challenges.trim() || null,
+        blockers: draft.blockers.trim() || null,
+      };
+
+      const { data, error } = await supabase
+        .from("daily_kpis")
+        .update(payload)
+        .eq("id", itemId)
+        .eq("profile_id", currentUser.id)
+        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .maybeSingle();
+      if (error) throw error;
+
+      if (data) {
+        const updated = data as DailyKpiReportRow;
+        setMyKpiReports((prev) =>
+          prev.map((row) => (row.id === itemId ? updated : row))
+        );
+      }
+
+      setEditingMyKpiIds((prev) => ({ ...prev, [itemId]: false }));
+      toast({
+        title: "Updated",
+        description: "KPI entry has been updated.",
+      });
+    } catch (error) {
+      console.error("Error updating KPI entry:", error);
+      toast({
+        title: "Update failed",
+        description: "Unable to update KPI entry.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingMyKpiIds((prev) => ({ ...prev, [itemId]: false }));
+    }
+  };
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -1894,13 +2389,19 @@ const Sentinel = () => {
     }
   };
 
-  const sidebarItems = [
-    { id: "dashboard", label: "Manual Checks", icon: ClipboardCheck },
-    { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
-    { id: "websites", label: "Websites", icon: Globe },
-    { id: "reports", label: "Reports", icon: FileText },
-    { id: "issue-tracker", label: "Issue Tracker", icon: AlertTriangle },
-  ];
+  const sidebarItems = isPlatformAdmin
+    ? [
+        { id: "dashboard", label: "Dashboard", icon: ClipboardCheck },
+        { id: "report", label: "Report", icon: FileText },
+      ]
+    : [
+        { id: "dashboard", label: "Manual Checks", icon: ClipboardCheck },
+        { id: "auto-checks", label: "Automated Checks", icon: RefreshCw },
+        { id: "daily-kpis", label: "Daily KPI's", icon: ClipboardCheck },
+        { id: "websites", label: "Websites", icon: Globe },
+        { id: "reports", label: "Reports", icon: FileText },
+        { id: "issue-tracker", label: "Issue Tracker", icon: AlertTriangle },
+      ];
   const displayName = currentUser?.email || "User";
 
   const handleSignOut = async () => {
@@ -1915,6 +2416,17 @@ const Sentinel = () => {
     }
     navigate("/", { replace: true });
   };
+
+  if (isRoleLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -1977,13 +2489,15 @@ const Sentinel = () => {
                     <item.icon className="w-5 h-5" />
                     {!(isTablet && isTabletCollapsed) && <span className="font-medium">{item.label}</span>}
                   </button>
-                  {(item.id === "websites" || item.id === "reports" || item.id === "issue-tracker") && !(isTablet && isTabletCollapsed) && (
+                  {(item.id === "websites" || item.id === "reports" || item.id === "issue-tracker" || item.id === "daily-kpis") && !(isTablet && isTabletCollapsed) && (
                     <button
                       type="button"
                       onClick={() =>
                         setSubmenuOpen((prev) =>
                           item.id === "websites"
                             ? { ...prev, websites: !prev.websites }
+                            : item.id === "daily-kpis"
+                              ? { ...prev, dailyKpis: !prev.dailyKpis }
                             : item.id === "issue-tracker"
                               ? { ...prev, issueTracker: !prev.issueTracker }
                             : { ...prev, reports: !prev.reports }
@@ -1993,6 +2507,8 @@ const Sentinel = () => {
                       aria-label={
                         item.id === "websites"
                           ? "Toggle websites submenu"
+                          : item.id === "daily-kpis"
+                            ? "Toggle daily kpis submenu"
                           : item.id === "reports"
                             ? "Toggle reports submenu"
                             : "Toggle issue tracker submenu"
@@ -2000,6 +2516,8 @@ const Sentinel = () => {
                     >
                       {(item.id === "websites"
                         ? submenuOpen.websites
+                        : item.id === "daily-kpis"
+                          ? submenuOpen.dailyKpis
                         : item.id === "reports"
                           ? submenuOpen.reports
                           : submenuOpen.issueTracker) ? (
@@ -2047,6 +2565,24 @@ const Sentinel = () => {
                       <span className="font-medium">Report Patcher</span>
                     </button>
                   </>
+                )}
+                {item.id === "daily-kpis" && submenuOpen.dailyKpis && !(isTablet && isTabletCollapsed) && (
+                  <button
+                    onClick={() => {
+                      if (isChecking) return;
+                      setActiveTab("my-kpis");
+                      if (isMobile) setIsMobileNavOpen(false);
+                    }}
+                    disabled={isChecking}
+                    className={`mt-1 ml-8 w-[calc(100%-2rem)] flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      activeTab === "my-kpis"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground dark:border dark:border-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground dark:border dark:border-transparent"
+                    } ${isChecking ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <ClipboardCheck className="w-4 h-4" />
+                    <span className="font-medium">My KPI&apos;s</span>
+                  </button>
                 )}
                 {item.id === "issue-tracker" && submenuOpen.issueTracker && !(isTablet && isTabletCollapsed) && (
                   <button
@@ -2118,6 +2654,188 @@ const Sentinel = () => {
         {!isChecking ? (
           <>
             {activeTab === "dashboard" && (
+              isPlatformAdmin ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-3xl font-bold text-foreground">Dashboard</h2>
+                    <Button variant="outline" size="sm" onClick={fetchAdminDashboardData} disabled={isAdminDashboardLoading}>
+                      {isAdminDashboardLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Refresh
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <Card className="border-l-4 border-l-blue-500">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Active Users (7d)</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{adminActiveUsers7d}</div>
+                        <p className="text-xs text-muted-foreground">Users with KPI activity in last 7 days</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-l-4 border-l-green-500">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Daily KPI Submissions Today</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{adminSubmissionsToday}</div>
+                        <p className="text-xs text-muted-foreground">Entries saved today</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-l-4 border-l-amber-500">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Submission Rate</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{adminSubmissionRateToday}%</div>
+                        <p className="text-xs text-muted-foreground">Submitters today / total users ({adminTotalUsers})</p>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-l-4 border-l-red-500">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Late/Missing Submissions</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{adminMissingToday}</div>
+                        <p className="text-xs text-muted-foreground">Users without today&apos;s submission</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>KPI Submission Trend (30d)</CardTitle>
+                        <CardDescription>Daily submission volume over the last 30 days</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {adminSubmissionTrend.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">No trend data yet.</div>
+                        ) : (
+                          <>
+                            <div className="h-40 flex items-end gap-1">
+                              {adminSubmissionTrend.map((point) => {
+                                const max = Math.max(...adminSubmissionTrend.map((p) => p.count), 1);
+                                const height = Math.max((point.count / max) * 100, point.count > 0 ? 8 : 3);
+                                return (
+                                  <div
+                                    key={point.date}
+                                    className="flex-1 rounded-sm bg-blue-500/70"
+                                    style={{ height: `${height}%` }}
+                                    title={`${point.label}: ${point.count}`}
+                                  />
+                                );
+                              })}
+                            </div>
+                            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                              <span>{adminSubmissionTrend[0]?.label}</span>
+                              <span>{adminSubmissionTrend[adminSubmissionTrend.length - 1]?.label}</span>
+                            </div>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Hour-of-Day Submission Heatmap</CardTitle>
+                        <CardDescription>Submission activity by local hour (last 30 days)</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-6 gap-2 sm:grid-cols-8 md:grid-cols-12">
+                          {adminHourlyHeatmap.map((item) => {
+                            const max = Math.max(...adminHourlyHeatmap.map((p) => p.count), 1);
+                            const intensity = item.count === 0 ? 0.15 : 0.25 + (item.count / max) * 0.75;
+                            return (
+                              <div key={item.hour} className="space-y-1 text-center">
+                                <div
+                                  className="h-8 rounded border"
+                                  style={{ backgroundColor: `hsl(221 83% 53% / ${intensity})` }}
+                                  title={`${String(item.hour).padStart(2, "0")}:00 - ${item.count} submissions`}
+                                />
+                                <p className="text-[10px] text-muted-foreground">{String(item.hour).padStart(2, "0")}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Top Performers</CardTitle>
+                      <CardDescription>Most consistent submitters in the last 30 days</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {adminTopPerformers.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No performer data yet.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {adminTopPerformers.map((performer, index) => (
+                            <div key={performer.profile_id} className="flex items-center justify-between rounded-lg border p-3">
+                              <div>
+                                <p className="font-medium">
+                                  #{index + 1} {performer.display_name || performer.email || `User ${performer.profile_id.slice(0, 8)}`}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{performer.email || "No email available"}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-medium">{performer.submittedDays} active days</p>
+                                <p className="text-xs text-muted-foreground">{performer.totalSubmissions} total submissions</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Late/Missing Submission Users</CardTitle>
+                      <CardDescription>Users without a submission today</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {adminMissingUsers.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No missing submissions today.</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-muted/50">
+                                <th className="border p-2 text-left">Display Name</th>
+                                <th className="border p-2 text-left">Email</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {adminMissingUsers.map((user) => (
+                                <tr key={user.id} className="hover:bg-muted/50">
+                                  <td className="border p-2">{user.display_name || "N/A"}</td>
+                                  <td className="border p-2 text-sm text-muted-foreground">{user.email || "N/A"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-3xl font-bold text-foreground md:hidden">Dashboard</h2>
@@ -2376,6 +3094,120 @@ const Sentinel = () => {
                     <Button onClick={startDailyCheck} size="lg" className="w-full sm:w-auto">
                       Start Daily Checks
                     </Button>
+                  </CardContent>
+                </Card>
+              </div>
+              )
+            )}
+            {activeTab === "report" && isPlatformAdmin && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-bold text-foreground">Report</h2>
+                </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily KPI Submissions</CardTitle>
+                    <CardDescription>
+                      Select a date to view all submitted KPI entries, ordered by latest saved time.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-start text-left font-normal min-w-56">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {format(adminKpiDate, "PPP")}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={adminKpiDate}
+                            onSelect={(date) => {
+                              if (!date) return;
+                              setAdminKpiDate(date);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {isAdminKpiLoading ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        Loading KPI submissions...
+                      </div>
+                    ) : adminKpiReports.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        No KPI submissions found for {format(adminKpiDate, "PPP")}.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {adminKpiReports.map((item) => (
+                          <Card key={item.id}>
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <CardTitle className="text-base">
+                                    {item.display_name || item.email || `User ${item.profile_id.slice(0, 8)}`}
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Saved: {format(new Date(item.updated_at), "PPpp")} | Submitted: {format(new Date(item.created_at), "PPpp")}
+                                  </CardDescription>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setExpandedAdminKpiIds((prev) => ({
+                                      ...prev,
+                                      [item.id]: !prev[item.id],
+                                    }))
+                                  }
+                                >
+                                  {expandedAdminKpiIds[item.id] ? (
+                                    <>
+                                      <ChevronUp className="mr-2 h-4 w-4" />
+                                      Collapse
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="mr-2 h-4 w-4" />
+                                      Expand
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            </CardHeader>
+                            {expandedAdminKpiIds[item.id] && (
+                              <CardContent className="space-y-3">
+                                <div>
+                                  <p className="text-sm font-medium">Goals</p>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.goals || "-"}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Tasks</p>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.tasks || "-"}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Achievements</p>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.achievements || "-"}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Challenges</p>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.challenges || "-"}</p>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Blockers</p>
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.blockers || "-"}</p>
+                                </div>
+                              </CardContent>
+                            )}
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -4399,6 +5231,322 @@ const Sentinel = () => {
                         </div>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "daily-kpis" && !isPlatformAdmin && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-bold text-foreground md:hidden">Daily KPI's</h2>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Daily KPI's</CardTitle>
+                    <CardDescription>
+                      Set your daily goals, tasks, achievements, challenges and blockers.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-week-start">Date</Label>
+                      <Input
+                        id="kpi-week-start"
+                        type="date"
+                        value={kpiEntryDate}
+                        onChange={(e) => setKpiEntryDate(e.target.value)}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-goals">Goals</Label>
+                      <Textarea
+                        id="kpi-goals"
+                        value={kpiGoals}
+                        onChange={(e) => setKpiGoals(e.target.value)}
+                        rows={4}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-tasks">Tasks</Label>
+                      <Textarea
+                        id="kpi-tasks"
+                        value={kpiTasks}
+                        onChange={(e) => setKpiTasks(e.target.value)}
+                        rows={4}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-achievements">Achievements</Label>
+                      <Textarea
+                        id="kpi-achievements"
+                        value={kpiAchievements}
+                        onChange={(e) => setKpiAchievements(e.target.value)}
+                        rows={4}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-challenges">Challenges</Label>
+                      <Textarea
+                        id="kpi-challenges"
+                        value={kpiChallenges}
+                        onChange={(e) => setKpiChallenges(e.target.value)}
+                        rows={4}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="kpi-blockers">Blockers</Label>
+                      <Textarea
+                        id="kpi-blockers"
+                        value={kpiBlockers}
+                        onChange={(e) => setKpiBlockers(e.target.value)}
+                        rows={4}
+                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      {isDailyKpiLoading ? (
+                        <span className="text-sm text-muted-foreground">Loading daily KPI...</span>
+                      ) : isDailyKpiReadOnly ? (
+                        <span className="text-sm text-muted-foreground">Saved entry loaded. Click Edit to update.</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Data is saved per selected date.</span>
+                      )}
+                      <div className="flex items-center gap-2">
+                        {isDailyKpiReadOnly && (
+                          <Button
+                            variant="outline"
+                            onClick={() => setIsDailyKpiEditMode(true)}
+                            disabled={isDailyKpiLoading || isDailyKpiSaving}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                        {dailyKpiRecordId !== null && isDailyKpiEditMode && (
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setIsDailyKpiEditMode(false);
+                              void loadDailyKpi();
+                            }}
+                            disabled={isDailyKpiLoading || isDailyKpiSaving}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                        <Button
+                          onClick={saveDailyKpi}
+                          disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                        >
+                          {isDailyKpiSaving ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : dailyKpiRecordId !== null && isDailyKpiEditMode ? (
+                            "Update Daily KPI"
+                          ) : (
+                            "Save Daily KPI"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "my-kpis" && !isPlatformAdmin && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-bold text-foreground md:hidden">My KPI's</h2>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>My KPI's</CardTitle>
+                    <CardDescription>Select a date to view your submitted KPI entries.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="justify-start text-left font-normal min-w-56">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {format(myKpiDate, "PPP")}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={myKpiDate}
+                            onSelect={(date) => {
+                              if (!date) return;
+                              setMyKpiDate(date);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    {isMyKpiLoading ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        Loading your KPI entries...
+                      </div>
+                    ) : myKpiReports.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
+                        No KPI entries found for {format(myKpiDate, "PPP")}.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {myKpiReports.map((item) => (
+                          <Card key={item.id}>
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between gap-4">
+                                <CardDescription>
+                                  Saved: {format(new Date(item.updated_at), "PPpp")} | Submitted: {format(new Date(item.created_at), "PPpp")}
+                                </CardDescription>
+                                {editingMyKpiIds[item.id] ? (
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => cancelEditMyKpi(item.id)}
+                                      disabled={savingMyKpiIds[item.id]}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => saveMyKpiEdit(item.id)}
+                                      disabled={savingMyKpiIds[item.id]}
+                                    >
+                                      {savingMyKpiIds[item.id] ? (
+                                        <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                          Saving...
+                                        </>
+                                      ) : (
+                                        "Save"
+                                      )}
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button variant="outline" size="sm" onClick={() => beginEditMyKpi(item)}>
+                                    Edit
+                                  </Button>
+                                )}
+                              </div>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              <div>
+                                <p className="text-sm font-medium">Goals</p>
+                                {editingMyKpiIds[item.id] ? (
+                                  <Textarea
+                                    value={myKpiDraftById[item.id]?.goals || ""}
+                                    onChange={(e) =>
+                                      setMyKpiDraftById((prev) => ({
+                                        ...prev,
+                                        [item.id]: { ...(prev[item.id] || { goals: "", tasks: "", achievements: "", challenges: "", blockers: "" }), goals: e.target.value },
+                                      }))
+                                    }
+                                    rows={3}
+                                    disabled={savingMyKpiIds[item.id]}
+                                  />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.goals || "-"}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">Tasks</p>
+                                {editingMyKpiIds[item.id] ? (
+                                  <Textarea
+                                    value={myKpiDraftById[item.id]?.tasks || ""}
+                                    onChange={(e) =>
+                                      setMyKpiDraftById((prev) => ({
+                                        ...prev,
+                                        [item.id]: { ...(prev[item.id] || { goals: "", tasks: "", achievements: "", challenges: "", blockers: "" }), tasks: e.target.value },
+                                      }))
+                                    }
+                                    rows={3}
+                                    disabled={savingMyKpiIds[item.id]}
+                                  />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.tasks || "-"}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">Achievements</p>
+                                {editingMyKpiIds[item.id] ? (
+                                  <Textarea
+                                    value={myKpiDraftById[item.id]?.achievements || ""}
+                                    onChange={(e) =>
+                                      setMyKpiDraftById((prev) => ({
+                                        ...prev,
+                                        [item.id]: { ...(prev[item.id] || { goals: "", tasks: "", achievements: "", challenges: "", blockers: "" }), achievements: e.target.value },
+                                      }))
+                                    }
+                                    rows={3}
+                                    disabled={savingMyKpiIds[item.id]}
+                                  />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.achievements || "-"}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">Challenges</p>
+                                {editingMyKpiIds[item.id] ? (
+                                  <Textarea
+                                    value={myKpiDraftById[item.id]?.challenges || ""}
+                                    onChange={(e) =>
+                                      setMyKpiDraftById((prev) => ({
+                                        ...prev,
+                                        [item.id]: { ...(prev[item.id] || { goals: "", tasks: "", achievements: "", challenges: "", blockers: "" }), challenges: e.target.value },
+                                      }))
+                                    }
+                                    rows={3}
+                                    disabled={savingMyKpiIds[item.id]}
+                                  />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.challenges || "-"}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">Blockers</p>
+                                {editingMyKpiIds[item.id] ? (
+                                  <Textarea
+                                    value={myKpiDraftById[item.id]?.blockers || ""}
+                                    onChange={(e) =>
+                                      setMyKpiDraftById((prev) => ({
+                                        ...prev,
+                                        [item.id]: { ...(prev[item.id] || { goals: "", tasks: "", achievements: "", challenges: "", blockers: "" }), blockers: e.target.value },
+                                      }))
+                                    }
+                                    rows={3}
+                                    disabled={savingMyKpiIds[item.id]}
+                                  />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.blockers || "-"}</p>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
