@@ -115,6 +115,7 @@ type CollaborationProject = {
 
 type DailyKpiEntry = {
   goals: string | null;
+  goal_items?: Array<{ goal: string; from_time: string; to_time: string }> | null;
   tasks: string | null;
   achievements: string | null;
   challenges: string | null;
@@ -127,6 +128,12 @@ type DailyKpiDraft = {
   achievements: string;
   challenges: string;
   blockers: string;
+};
+
+type GoalItem = {
+  goal: string;
+  from_time: string;
+  to_time: string;
 };
 
 type DailyKpiReportRow = DailyKpiEntry & {
@@ -157,14 +164,6 @@ type AdminSubmissionTrendPoint = {
 type AdminHourlyHeatPoint = {
   hour: number;
   count: number;
-};
-
-type AdminTopPerformer = {
-  profile_id: string;
-  display_name: string | null;
-  email: string | null;
-  submittedDays: number;
-  totalSubmissions: number;
 };
 
 const Sentinel = () => {
@@ -378,6 +377,7 @@ const Sentinel = () => {
   const [showAllAutoIssues, setShowAllAutoIssues] = useState(false);
   const [kpiEntryDate, setKpiEntryDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [kpiGoals, setKpiGoals] = useState("");
+  const [kpiGoalItems, setKpiGoalItems] = useState<GoalItem[]>([]);
   const [kpiTasks, setKpiTasks] = useState("");
   const [kpiAchievements, setKpiAchievements] = useState("");
   const [kpiChallenges, setKpiChallenges] = useState("");
@@ -398,7 +398,6 @@ const Sentinel = () => {
   const [adminMissingToday, setAdminMissingToday] = useState(0);
   const [adminSubmissionTrend, setAdminSubmissionTrend] = useState<AdminSubmissionTrendPoint[]>([]);
   const [adminHourlyHeatmap, setAdminHourlyHeatmap] = useState<AdminHourlyHeatPoint[]>([]);
-  const [adminTopPerformers, setAdminTopPerformers] = useState<AdminTopPerformer[]>([]);
   const [adminMissingUsers, setAdminMissingUsers] = useState<KpiProfileLookup[]>([]);
   const [myKpiDate, setMyKpiDate] = useState<Date>(new Date());
   const [myKpiReports, setMyKpiReports] = useState<DailyKpiReportRow[]>([]);
@@ -485,7 +484,7 @@ const Sentinel = () => {
     try {
       const { data, error } = await supabase
         .from("daily_kpis")
-        .select("id, goals, tasks, achievements, challenges, blockers")
+        .select("id, goals, goal_items, tasks, achievements, challenges, blockers")
         .eq("profile_id", currentUser.id)
         .eq("entry_date", kpiEntryDate)
         .maybeSingle();
@@ -495,6 +494,13 @@ const Sentinel = () => {
       const row = (data as DailyKpiEntry | null) ?? null;
       setDailyKpiRecordId((data as { id?: number } | null)?.id ?? null);
       setKpiGoals(row?.goals || "");
+      if (Array.isArray(row?.goal_items) && row.goal_items.length > 0) {
+        setKpiGoalItems(row.goal_items);
+      } else if (row?.goals) {
+        setKpiGoalItems([{ goal: row.goals, from_time: "", to_time: "" }]);
+      } else {
+        setKpiGoalItems([]);
+      }
       setKpiTasks(row?.tasks || "");
       setKpiAchievements(row?.achievements || "");
       setKpiChallenges(row?.challenges || "");
@@ -522,11 +528,25 @@ const Sentinel = () => {
     if (!currentUser?.id) return;
     setIsDailyKpiSaving(true);
     try {
+      const sanitizedGoalItems = kpiGoalItems
+        .map((item) => ({
+          goal: item.goal.trim(),
+          from_time: item.from_time.trim(),
+          to_time: item.to_time.trim(),
+        }))
+        .filter((item) => item.goal || item.from_time || item.to_time);
+      const composedGoalsText = sanitizedGoalItems.length
+        ? sanitizedGoalItems
+            .map((item, index) => `${index + 1}. ${item.goal}${item.from_time || item.to_time ? ` (${item.from_time || "-"} - ${item.to_time || "-"})` : ""}`)
+            .join("\n")
+        : kpiGoals.trim();
+
       const { data, error } = await supabase.from("daily_kpis").upsert(
         {
           profile_id: currentUser.id,
           entry_date: kpiEntryDate,
-          goals: kpiGoals.trim() || null,
+          goals: composedGoalsText || null,
+          goal_items: sanitizedGoalItems,
           tasks: kpiTasks.trim() || null,
           achievements: kpiAchievements.trim() || null,
           challenges: kpiChallenges.trim() || null,
@@ -562,7 +582,7 @@ const Sentinel = () => {
       rangeEnd.setDate(rangeEnd.getDate() + 1);
       const { data: kpiData, error: kpiError } = await supabase
         .from("daily_kpis")
-        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .select("id, profile_id, entry_date, goals, goal_items, tasks, achievements, challenges, blockers, created_at, updated_at")
         .gte("updated_at", rangeStart.toISOString())
         .lt("updated_at", rangeEnd.toISOString())
         .order("updated_at", { ascending: false });
@@ -679,34 +699,6 @@ const Sentinel = () => {
       });
       const hourlyHeatmap: AdminHourlyHeatPoint[] = hourCounts.map((count, hour) => ({ hour, count }));
 
-      const profileById = profiles.reduce<Record<string, KpiProfileLookup>>((acc, p) => {
-        acc[p.id] = p;
-        return acc;
-      }, {});
-      const performerMap = kpis.reduce<
-        Record<string, { profile_id: string; totalSubmissions: number; days: Set<string> }>
-      >((acc, row) => {
-        if (!acc[row.profile_id]) {
-          acc[row.profile_id] = { profile_id: row.profile_id, totalSubmissions: 0, days: new Set<string>() };
-        }
-        acc[row.profile_id].totalSubmissions += 1;
-        acc[row.profile_id].days.add(format(new Date(row.updated_at), "yyyy-MM-dd"));
-        return acc;
-      }, {});
-      const topPerformers = Object.values(performerMap)
-        .map((item) => ({
-          profile_id: item.profile_id,
-          display_name: profileById[item.profile_id]?.display_name ?? null,
-          email: profileById[item.profile_id]?.email ?? null,
-          submittedDays: item.days.size,
-          totalSubmissions: item.totalSubmissions,
-        }))
-        .sort((a, b) => {
-          if (b.submittedDays !== a.submittedDays) return b.submittedDays - a.submittedDays;
-          return b.totalSubmissions - a.totalSubmissions;
-        })
-        .slice(0, 5);
-
       setAdminTotalUsers(totalUsers);
       setAdminActiveUsers7d(activeUsers7d);
       setAdminSubmissionsToday(submissionsToday);
@@ -715,7 +707,6 @@ const Sentinel = () => {
       setAdminMissingUsers(missingUsers);
       setAdminSubmissionTrend(trend);
       setAdminHourlyHeatmap(hourlyHeatmap);
-      setAdminTopPerformers(topPerformers);
     } catch (error) {
       console.error("Error loading admin dashboard data:", error);
       toast({
@@ -730,6 +721,305 @@ const Sentinel = () => {
 
   const isDailyKpiReadOnly = dailyKpiRecordId !== null && !isDailyKpiEditMode;
 
+  const renderGoalsDisplay = (
+    goalItems: Array<{ goal: string; from_time: string; to_time: string }> | null | undefined,
+    fallbackGoals: string | null | undefined
+  ) => {
+    const rows = Array.isArray(goalItems)
+      ? goalItems.filter((item) => item && (item.goal || item.from_time || item.to_time))
+      : [];
+
+    if (rows.length === 0) {
+      return <p className="text-sm text-muted-foreground whitespace-pre-wrap">{fallbackGoals || "-"}</p>;
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="border p-2 text-left">Goal</th>
+              <th className="border p-2 text-left">From</th>
+              <th className="border p-2 text-left">To</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((item, index) => (
+              <tr key={`goal-row-${index}`} className="hover:bg-muted/50">
+                <td className="border p-2">{item.goal || "-"}</td>
+                <td className="border p-2 text-muted-foreground">{item.from_time || "-"}</td>
+                <td className="border p-2 text-muted-foreground">{item.to_time || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const escapeXml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+
+  const buildZipStore = (files: Array<{ path: string; content: Uint8Array }>) => {
+    const encoder = new TextEncoder();
+    const chunks: Uint8Array[] = [];
+    const centralDirectory: Uint8Array[] = [];
+    let offset = 0;
+
+    const makeCrcTable = () => {
+      const table = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let j = 0; j < 8; j++) {
+          c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        table[i] = c >>> 0;
+      }
+      return table;
+    };
+    const crcTable = makeCrcTable();
+    const crc32 = (data: Uint8Array) => {
+      let crc = 0xffffffff;
+      for (let i = 0; i < data.length; i++) {
+        crc = crcTable[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
+      }
+      return (crc ^ 0xffffffff) >>> 0;
+    };
+
+    const u16 = (value: number) => {
+      const arr = new Uint8Array(2);
+      const view = new DataView(arr.buffer);
+      view.setUint16(0, value, true);
+      return arr;
+    };
+    const u32 = (value: number) => {
+      const arr = new Uint8Array(4);
+      const view = new DataView(arr.buffer);
+      view.setUint32(0, value >>> 0, true);
+      return arr;
+    };
+
+    files.forEach((file) => {
+      const nameBytes = encoder.encode(file.path);
+      const data = file.content;
+      const crc = crc32(data);
+      const size = data.length;
+      const localOffset = offset;
+
+      const localHeader = [
+        u32(0x04034b50),
+        u16(20),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(crc),
+        u32(size),
+        u32(size),
+        u16(nameBytes.length),
+        u16(0),
+        nameBytes,
+      ];
+      localHeader.forEach((part) => {
+        chunks.push(part);
+        offset += part.length;
+      });
+      chunks.push(data);
+      offset += data.length;
+
+      const centralHeader = [
+        u32(0x02014b50),
+        u16(20),
+        u16(20),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(crc),
+        u32(size),
+        u32(size),
+        u16(nameBytes.length),
+        u16(0),
+        u16(0),
+        u16(0),
+        u16(0),
+        u32(0),
+        u32(localOffset),
+        nameBytes,
+      ];
+      centralHeader.forEach((part) => centralDirectory.push(part));
+    });
+
+    const centralOffset = offset;
+    let centralSize = 0;
+    centralDirectory.forEach((part) => {
+      chunks.push(part);
+      offset += part.length;
+      centralSize += part.length;
+    });
+
+    const endRecord = [
+      u32(0x06054b50),
+      u16(0),
+      u16(0),
+      u16(files.length),
+      u16(files.length),
+      u32(centralSize),
+      u32(centralOffset),
+      u16(0),
+    ];
+    endRecord.forEach((part) => chunks.push(part));
+
+    const total = chunks.reduce((sum, c) => sum + c.length, 0);
+    const zip = new Uint8Array(total);
+    let pos = 0;
+    chunks.forEach((part) => {
+      zip.set(part, pos);
+      pos += part.length;
+    });
+    return zip;
+  };
+
+  const downloadAdminKpiDocx = () => {
+    if (adminKpiReports.length === 0) {
+      toast({
+        title: "No data",
+        description: "There are no KPI submissions to export for this date.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const sections = adminKpiReports
+      .map((item) => {
+        const goalRows = Array.isArray(item.goal_items)
+          ? item.goal_items.filter((row) => row && (row.goal || row.from_time || row.to_time))
+          : [];
+
+        const goalLines = goalRows.length
+          ? goalRows.map((row, idx) => `${idx + 1}. ${row.goal || "-"} (${row.from_time || "-"} - ${row.to_time || "-"})`)
+          : [item.goals || "-"];
+
+        return [
+          `User: ${item.display_name || item.email || `User ${item.profile_id.slice(0, 8)}`}`,
+          `Saved: ${format(new Date(item.updated_at), "PPpp")} | Submitted: ${format(new Date(item.created_at), "PPpp")}`,
+          "Goals:",
+          ...goalLines,
+          "Tasks:",
+          item.tasks || "-",
+          "Achievements:",
+          item.achievements || "-",
+          "Challenges:",
+          item.challenges || "-",
+          "Blockers:",
+          item.blockers || "-",
+          "",
+        ];
+      })
+      .flat();
+
+    const allLines = [
+      "Daily KPI Report",
+      `Date: ${format(adminKpiDate, "PPP")}`,
+      "",
+      ...sections,
+    ];
+
+    const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    ${allLines
+      .map(
+        (line) =>
+          `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`
+      )
+      .join("")}
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+      <w:cols w:space="708"/>
+      <w:docGrid w:linePitch="360"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+
+    const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>`;
+
+    const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`;
+
+    const documentRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:qFormat/>
+  </w:style>
+</w:styles>`;
+
+    const nowIso = new Date().toISOString();
+    const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:dcterms="http://purl.org/dc/terms/"
+ xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>Daily KPI Report</dc:title>
+  <dc:creator>Site Sentinel</dc:creator>
+  <cp:lastModifiedBy>Site Sentinel</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${nowIso}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${nowIso}</dcterms:modified>
+</cp:coreProperties>`;
+
+    const appXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>Site Sentinel</Application>
+</Properties>`;
+
+    const zipBytes = buildZipStore([
+      { path: "[Content_Types].xml", content: new TextEncoder().encode(contentTypesXml) },
+      { path: "_rels/.rels", content: new TextEncoder().encode(relsXml) },
+      { path: "docProps/core.xml", content: new TextEncoder().encode(coreXml) },
+      { path: "docProps/app.xml", content: new TextEncoder().encode(appXml) },
+      { path: "word/document.xml", content: new TextEncoder().encode(documentXml) },
+      { path: "word/styles.xml", content: new TextEncoder().encode(stylesXml) },
+      { path: "word/_rels/document.xml.rels", content: new TextEncoder().encode(documentRelsXml) },
+    ]);
+
+    const blob = new Blob([zipBytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `daily-kpi-report-${format(adminKpiDate, "yyyy-MM-dd")}.docx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const fetchMyKpiReports = useCallback(async () => {
     if (!currentUser?.id) return;
     setIsMyKpiLoading(true);
@@ -737,7 +1027,7 @@ const Sentinel = () => {
       const selectedDate = format(myKpiDate, "yyyy-MM-dd");
       const { data, error } = await supabase
         .from("daily_kpis")
-        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .select("id, profile_id, entry_date, goals, goal_items, tasks, achievements, challenges, blockers, created_at, updated_at")
         .eq("profile_id", currentUser.id)
         .eq("entry_date", selectedDate)
         .order("updated_at", { ascending: false });
@@ -827,7 +1117,7 @@ const Sentinel = () => {
         .update(payload)
         .eq("id", itemId)
         .eq("profile_id", currentUser.id)
-        .select("id, profile_id, entry_date, goals, tasks, achievements, challenges, blockers, created_at, updated_at")
+        .select("id, profile_id, entry_date, goals, goal_items, tasks, achievements, challenges, blockers, created_at, updated_at")
         .maybeSingle();
       if (error) throw error;
 
@@ -2777,35 +3067,6 @@ const Sentinel = () => {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle>Top Performers</CardTitle>
-                      <CardDescription>Most consistent submitters in the last 30 days</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {adminTopPerformers.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">No performer data yet.</div>
-                      ) : (
-                        <div className="space-y-3">
-                          {adminTopPerformers.map((performer, index) => (
-                            <div key={performer.profile_id} className="flex items-center justify-between rounded-lg border p-3">
-                              <div>
-                                <p className="font-medium">
-                                  #{index + 1} {performer.display_name || performer.email || `User ${performer.profile_id.slice(0, 8)}`}
-                                </p>
-                                <p className="text-xs text-muted-foreground">{performer.email || "No email available"}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium">{performer.submittedDays} active days</p>
-                                <p className="text-xs text-muted-foreground">{performer.totalSubmissions} total submissions</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
                       <CardTitle>Late/Missing Submission Users</CardTitle>
                       <CardDescription>Users without a submission today</CardDescription>
                     </CardHeader>
@@ -3106,10 +3367,18 @@ const Sentinel = () => {
                 </div>
                 <Card>
                   <CardHeader>
-                    <CardTitle>Daily KPI Submissions</CardTitle>
-                    <CardDescription>
-                      Select a date to view all submitted KPI entries, ordered by latest saved time.
-                    </CardDescription>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <CardTitle>Daily KPI Submissions</CardTitle>
+                        <CardDescription>
+                          Select a date to view all submitted KPI entries, ordered by latest saved time.
+                        </CardDescription>
+                      </div>
+                      <Button variant="outline" onClick={downloadAdminKpiDocx} disabled={adminKpiReports.length === 0}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download DOCX
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
@@ -3182,10 +3451,10 @@ const Sentinel = () => {
                             </CardHeader>
                             {expandedAdminKpiIds[item.id] && (
                               <CardContent className="space-y-3">
-                                <div>
-                                  <p className="text-sm font-medium">Goals</p>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.goals || "-"}</p>
-                                </div>
+                              <div>
+                                <p className="text-sm font-medium">Goals</p>
+                                {renderGoalsDisplay(item.goal_items, item.goals)}
+                              </div>
                                 <div>
                                   <p className="text-sm font-medium">Tasks</p>
                                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.tasks || "-"}</p>
@@ -5262,14 +5531,85 @@ const Sentinel = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="kpi-goals">Goals</Label>
-                      <Textarea
-                        id="kpi-goals"
-                        value={kpiGoals}
-                        onChange={(e) => setKpiGoals(e.target.value)}
-                        rows={4}
-                        disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label>Goals</Label>
+                        {!isDailyKpiReadOnly && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setKpiGoalItems((prev) => [...prev, { goal: "", from_time: "", to_time: "" }])
+                            }
+                            disabled={isDailyKpiLoading || isDailyKpiSaving}
+                          >
+                            Add Goal
+                          </Button>
+                        )}
+                      </div>
+
+                      {kpiGoalItems.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No goals added yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {kpiGoalItems.map((item, index) => (
+                            <div key={`goal-item-${index}`} className="grid gap-2 md:grid-cols-12">
+                              <Input
+                                className="md:col-span-7"
+                                placeholder="Goal"
+                                value={item.goal}
+                                onChange={(e) =>
+                                  setKpiGoalItems((prev) =>
+                                    prev.map((row, rowIndex) =>
+                                      rowIndex === index ? { ...row, goal: e.target.value } : row
+                                    )
+                                  )
+                                }
+                                disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                              />
+                              <Input
+                                className="md:col-span-2"
+                                placeholder="From time"
+                                value={item.from_time}
+                                onChange={(e) =>
+                                  setKpiGoalItems((prev) =>
+                                    prev.map((row, rowIndex) =>
+                                      rowIndex === index ? { ...row, from_time: e.target.value } : row
+                                    )
+                                  )
+                                }
+                                disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                              />
+                              <Input
+                                className="md:col-span-2"
+                                placeholder="To time"
+                                value={item.to_time}
+                                onChange={(e) =>
+                                  setKpiGoalItems((prev) =>
+                                    prev.map((row, rowIndex) =>
+                                      rowIndex === index ? { ...row, to_time: e.target.value } : row
+                                    )
+                                  )
+                                }
+                                disabled={isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly}
+                              />
+                              {!isDailyKpiReadOnly && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="md:col-span-1"
+                                  onClick={() =>
+                                    setKpiGoalItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index))
+                                  }
+                                  disabled={isDailyKpiLoading || isDailyKpiSaving}
+                                >
+                                  Remove
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -5467,7 +5807,7 @@ const Sentinel = () => {
                                     disabled={savingMyKpiIds[item.id]}
                                   />
                                 ) : (
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.goals || "-"}</p>
+                                  renderGoalsDisplay(item.goal_items, item.goals)
                                 )}
                               </div>
                               <div>
