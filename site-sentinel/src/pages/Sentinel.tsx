@@ -136,6 +136,17 @@ type GoalItem = {
   to_time: string;
 };
 
+type DailyKpiDraftSnapshot = {
+  kpiGoals: string;
+  kpiGoalItems: GoalItem[];
+  kpiTasks: string;
+  kpiAchievements: string;
+  kpiChallenges: string;
+  kpiBlockers: string;
+  dailyKpiRecordId: number | null;
+  isDailyKpiEditMode: boolean;
+};
+
 type DailyKpiReportRow = DailyKpiEntry & {
   id: number;
   profile_id: string;
@@ -518,11 +529,88 @@ const Sentinel = () => {
     }
   }, [currentUser?.id, kpiEntryDate, toast]);
 
+  const getDailyKpiDraftKey = useCallback(
+    (entryDate: string) => (currentUser?.id ? `daily-kpi-draft:${currentUser.id}:${entryDate}` : null),
+    [currentUser?.id]
+  );
+
+  const applyDailyKpiDraft = useCallback((draft: DailyKpiDraftSnapshot) => {
+    setKpiGoals(draft.kpiGoals || "");
+    setKpiGoalItems(Array.isArray(draft.kpiGoalItems) ? draft.kpiGoalItems : []);
+    setKpiTasks(draft.kpiTasks || "");
+    setKpiAchievements(draft.kpiAchievements || "");
+    setKpiChallenges(draft.kpiChallenges || "");
+    setKpiBlockers(draft.kpiBlockers || "");
+    setDailyKpiRecordId(draft.dailyKpiRecordId ?? null);
+    setIsDailyKpiEditMode(Boolean(draft.isDailyKpiEditMode));
+  }, []);
+
+  const loadDailyKpiDraft = useCallback(
+    (entryDate: string) => {
+      const key = getDailyKpiDraftKey(entryDate);
+      if (!key) return false;
+      const raw = localStorage.getItem(key);
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw) as DailyKpiDraftSnapshot;
+        applyDailyKpiDraft(parsed);
+        return true;
+      } catch {
+        localStorage.removeItem(key);
+        return false;
+      }
+    },
+    [applyDailyKpiDraft, getDailyKpiDraftKey]
+  );
+
+  const clearDailyKpiDraft = useCallback(
+    (entryDate: string) => {
+      const key = getDailyKpiDraftKey(entryDate);
+      if (!key) return;
+      localStorage.removeItem(key);
+    },
+    [getDailyKpiDraftKey]
+  );
+
   useEffect(() => {
     if (activeTab !== "daily-kpis") return;
     if (!currentUser?.id) return;
-    void loadDailyKpi();
-  }, [activeTab, currentUser?.id, loadDailyKpi]);
+    const loadedDraft = loadDailyKpiDraft(kpiEntryDate);
+    if (!loadedDraft) {
+      void loadDailyKpi();
+    }
+  }, [activeTab, currentUser?.id, kpiEntryDate, loadDailyKpi, loadDailyKpiDraft]);
+
+  useEffect(() => {
+    if (activeTab !== "daily-kpis") return;
+    if (!currentUser?.id) return;
+    const key = getDailyKpiDraftKey(kpiEntryDate);
+    if (!key) return;
+    const snapshot: DailyKpiDraftSnapshot = {
+      kpiGoals,
+      kpiGoalItems,
+      kpiTasks,
+      kpiAchievements,
+      kpiChallenges,
+      kpiBlockers,
+      dailyKpiRecordId,
+      isDailyKpiEditMode,
+    };
+    localStorage.setItem(key, JSON.stringify(snapshot));
+  }, [
+    activeTab,
+    currentUser?.id,
+    getDailyKpiDraftKey,
+    kpiEntryDate,
+    kpiGoals,
+    kpiGoalItems,
+    kpiTasks,
+    kpiAchievements,
+    kpiChallenges,
+    kpiBlockers,
+    dailyKpiRecordId,
+    isDailyKpiEditMode,
+  ]);
 
   const saveDailyKpi = async () => {
     if (!currentUser?.id) return;
@@ -557,6 +645,7 @@ const Sentinel = () => {
       if (error) throw error;
       setDailyKpiRecordId((data as { id?: number } | null)?.id ?? dailyKpiRecordId);
       setIsDailyKpiEditMode(false);
+      clearDailyKpiDraft(kpiEntryDate);
       toast({
         title: "Saved",
         description: "Daily KPI has been saved.",
