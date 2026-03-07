@@ -468,7 +468,7 @@ const Sentinel = () => {
 
   useEffect(() => {
     if (isPlatformAdmin) {
-      if (activeTab !== "dashboard" && activeTab !== "report") {
+      if (!["dashboard", "report", "daily-kpis", "my-kpis"].includes(activeTab)) {
         setActiveTab("dashboard");
       }
       return;
@@ -519,10 +519,10 @@ const Sentinel = () => {
   }, [currentUser?.id, kpiEntryDate, toast]);
 
   useEffect(() => {
-    if (isPlatformAdmin || activeTab !== "daily-kpis") return;
+    if (activeTab !== "daily-kpis") return;
     if (!currentUser?.id) return;
     void loadDailyKpi();
-  }, [activeTab, currentUser?.id, isPlatformAdmin, loadDailyKpi]);
+  }, [activeTab, currentUser?.id, loadDailyKpi]);
 
   const saveDailyKpi = async () => {
     if (!currentUser?.id) return;
@@ -1056,9 +1056,9 @@ const Sentinel = () => {
   }, [activeTab, isPlatformAdmin, fetchAdminDashboardData]);
 
   useEffect(() => {
-    if (isPlatformAdmin || activeTab !== "my-kpis") return;
+    if (activeTab !== "my-kpis") return;
     void fetchMyKpiReports();
-  }, [activeTab, isPlatformAdmin, fetchMyKpiReports]);
+  }, [activeTab, fetchMyKpiReports]);
 
   useEffect(() => {
     if (myKpiReports.length === 0) return;
@@ -2683,6 +2683,7 @@ const Sentinel = () => {
     ? [
         { id: "dashboard", label: "Dashboard", icon: ClipboardCheck },
         { id: "report", label: "Report", icon: FileText },
+        { id: "daily-kpis", label: "Daily KPI's", icon: ClipboardCheck },
       ]
     : [
         { id: "dashboard", label: "Manual Checks", icon: ClipboardCheck },
@@ -5505,7 +5506,7 @@ const Sentinel = () => {
               </div>
             )}
 
-            {activeTab === "daily-kpis" && !isPlatformAdmin && (
+            {activeTab === "daily-kpis" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-3xl font-bold text-foreground md:hidden">Daily KPI's</h2>
@@ -5708,7 +5709,7 @@ const Sentinel = () => {
               </div>
             )}
 
-            {activeTab === "my-kpis" && !isPlatformAdmin && (
+            {activeTab === "my-kpis" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-3xl font-bold text-foreground md:hidden">My KPI's</h2>
