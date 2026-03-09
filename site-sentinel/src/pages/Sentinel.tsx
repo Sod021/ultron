@@ -173,6 +173,7 @@ type DailyKpiEntry = {
     goal: string;
     from_time: string;
     to_time: string;
+    achieved?: boolean;
   }> | null;
   tasks: string | null;
   achievements: string | null;
@@ -192,6 +193,7 @@ type GoalItem = {
   goal: string;
   from_time: string;
   to_time: string;
+  achieved: boolean;
 };
 
 type DailyKpiDraftSnapshot = {
@@ -657,9 +659,16 @@ const Sentinel = () => {
       setDailyKpiRecordId((data as { id?: number } | null)?.id ?? null);
       setKpiGoals(row?.goals || "");
       if (Array.isArray(row?.goal_items) && row.goal_items.length > 0) {
-        setKpiGoalItems(row.goal_items);
+        setKpiGoalItems(
+          row.goal_items.map((item) => ({
+            goal: item.goal || "",
+            from_time: item.from_time || "",
+            to_time: item.to_time || "",
+            achieved: item.achieved !== false,
+          })),
+        );
       } else if (row?.goals) {
-        setKpiGoalItems([{ goal: row.goals, from_time: "", to_time: "" }]);
+        setKpiGoalItems([{ goal: row.goals, from_time: "", to_time: "", achieved: true }]);
       } else {
         setKpiGoalItems([]);
       }
@@ -689,7 +698,14 @@ const Sentinel = () => {
   const applyDailyKpiDraft = useCallback((draft: DailyKpiDraftSnapshot) => {
     setKpiGoals(draft.kpiGoals || "");
     setKpiGoalItems(
-      Array.isArray(draft.kpiGoalItems) ? draft.kpiGoalItems : [],
+      Array.isArray(draft.kpiGoalItems)
+        ? draft.kpiGoalItems.map((item) => ({
+            goal: item.goal || "",
+            from_time: item.from_time || "",
+            to_time: item.to_time || "",
+            achieved: item.achieved !== false,
+          }))
+        : [],
     );
     setKpiTasks(draft.kpiTasks || "");
     setKpiAchievements(draft.kpiAchievements || "");
@@ -781,13 +797,14 @@ const Sentinel = () => {
           goal: item.goal.trim(),
           from_time: item.from_time.trim(),
           to_time: item.to_time.trim(),
+          achieved: Boolean(item.achieved),
         }))
         .filter((item) => item.goal || item.from_time || item.to_time);
       const composedGoalsText = sanitizedGoalItems.length
         ? sanitizedGoalItems
             .map(
               (item, index) =>
-                `${index + 1}. ${item.goal}${item.from_time || item.to_time ? ` (${item.from_time || "-"} - ${item.to_time || "-"})` : ""}`,
+                `${index + 1}. [${item.achieved ? "✓" : "✕"}] ${item.goal}${item.from_time || item.to_time ? ` (${item.from_time || "-"} - ${item.to_time || "-"})` : ""}`,
             )
             .join("\n")
         : kpiGoals.trim();
@@ -999,7 +1016,7 @@ const Sentinel = () => {
 
   const renderGoalsDisplay = (
     goalItems:
-      | Array<{ goal: string; from_time: string; to_time: string }>
+      | Array<{ goal: string; from_time: string; to_time: string; achieved?: boolean }>
       | null
       | undefined,
     fallbackGoals: string | null | undefined,
@@ -1026,6 +1043,7 @@ const Sentinel = () => {
               <th className="border p-2 text-left">Goal</th>
               <th className="border p-2 text-left">From</th>
               <th className="border p-2 text-left">To</th>
+              <th className="border p-2 text-left">Achieved</th>
             </tr>
           </thead>
           <tbody>
@@ -1037,6 +1055,9 @@ const Sentinel = () => {
                 </td>
                 <td className="border p-2 text-muted-foreground">
                   {item.to_time || "-"}
+                </td>
+                <td className="border p-2 text-muted-foreground">
+                  {item.achieved ? "✓" : "✕"}
                 </td>
               </tr>
             ))}
@@ -1197,7 +1218,7 @@ const Sentinel = () => {
         const goalLines = goalRows.length
           ? goalRows.map(
               (row, idx) =>
-                `${idx + 1}. ${row.goal || "-"} (${row.from_time || "-"} - ${row.to_time || "-"})`,
+                `${idx + 1}. [${row.achieved ? "Achieved" : "Not Achieved"}] ${row.goal || "-"} (${row.from_time || "-"} - ${row.to_time || "-"})`,
             )
           : [item.goals || "-"];
 
@@ -7091,7 +7112,12 @@ const Sentinel = () => {
                             onClick={() =>
                               setKpiGoalItems((prev) => [
                                 ...prev,
-                                { goal: "", from_time: "", to_time: "" },
+                                {
+                                  goal: "",
+                                  from_time: "",
+                                  to_time: "",
+                                  achieved: true,
+                                },
                               ])
                             }
                             disabled={isDailyKpiLoading || isDailyKpiSaving}
@@ -7113,7 +7139,7 @@ const Sentinel = () => {
                               className="grid gap-2 md:grid-cols-12"
                             >
                               <Input
-                                className="md:col-span-7"
+                                className="md:col-span-6"
                                 placeholder="Goal"
                                 value={item.goal}
                                 onChange={(e) =>
@@ -7169,25 +7195,63 @@ const Sentinel = () => {
                                   isDailyKpiReadOnly
                                 }
                               />
-                              {!isDailyKpiReadOnly && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  className="md:col-span-1"
-                                  onClick={() =>
-                                    setKpiGoalItems((prev) =>
-                                      prev.filter(
-                                        (_, rowIndex) => rowIndex !== index,
-                                      ),
-                                    )
-                                  }
-                                  disabled={
-                                    isDailyKpiLoading || isDailyKpiSaving
-                                  }
-                                >
-                                  Remove
-                                </Button>
-                              )}
+                              <div className="md:col-span-2 flex items-center gap-2">
+                                {isDailyKpiReadOnly ? (
+                                  <span
+                                    className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium text-white ${
+                                      item.achieved ? "bg-green-600" : "bg-red-600"
+                                    }`}
+                                  >
+                                    {item.achieved ? "✓" : "✕"}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className={`!h-9 !w-9 !px-0 !text-white !border-transparent ${
+                                        item.achieved
+                                          ? "!bg-green-600 hover:!bg-green-700"
+                                          : "!bg-red-600 hover:!bg-red-700"
+                                      }`}
+                                      onClick={() =>
+                                        setKpiGoalItems((prev) =>
+                                          prev.map((row, rowIndex) =>
+                                            rowIndex === index
+                                              ? {
+                                                  ...row,
+                                                  achieved: !row.achieved,
+                                                }
+                                              : row,
+                                          ),
+                                        )
+                                      }
+                                      disabled={
+                                        isDailyKpiLoading || isDailyKpiSaving
+                                      }
+                                      title={item.achieved ? "Mark as not achieved" : "Mark as achieved"}
+                                    >
+                                      {item.achieved ? "✓" : "✕"}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        setKpiGoalItems((prev) =>
+                                          prev.filter(
+                                            (_, rowIndex) => rowIndex !== index,
+                                          ),
+                                        )
+                                      }
+                                      disabled={
+                                        isDailyKpiLoading || isDailyKpiSaving
+                                      }
+                                    >
+                                      Delete Goal
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
