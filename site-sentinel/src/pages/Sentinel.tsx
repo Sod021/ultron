@@ -249,6 +249,21 @@ type AdminHourlyHeatPoint = {
   count: number;
 };
 
+const getCurrentWorkweekRange = () => {
+  const today = new Date();
+  const monday = new Date(today);
+  const dayOfWeek = today.getDay();
+  const diffToMonday = (dayOfWeek + 6) % 7;
+  monday.setDate(today.getDate() - diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  friday.setHours(0, 0, 0, 0);
+
+  return { from: monday, to: friday };
+};
+
 const Sentinel = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -525,10 +540,7 @@ const Sentinel = () => {
   const [isDailyKpiEditMode, setIsDailyKpiEditMode] = useState(false);
   const [adminKpiDateRange, setAdminKpiDateRange] = useState<
     DateRange | undefined
-  >({
-    from: new Date(),
-    to: new Date(),
-  });
+  >(getCurrentWorkweekRange);
   const [adminKpiDateRangePreview, setAdminKpiDateRangePreview] = useState<
     DateRange | undefined
   >(undefined);
@@ -538,6 +550,9 @@ const Sentinel = () => {
   const [isAdminKpiLoading, setIsAdminKpiLoading] = useState(false);
   const [expandedAdminKpiIds, setExpandedAdminKpiIds] = useState<
     Record<number, boolean>
+  >({});
+  const [expandedAdminKpiGroupIds, setExpandedAdminKpiGroupIds] = useState<
+    Record<string, boolean>
   >({});
   const [isAdminDashboardLoading, setIsAdminDashboardLoading] = useState(false);
   const [adminTotalUsers, setAdminTotalUsers] = useState(0);
@@ -640,11 +655,15 @@ const Sentinel = () => {
         date: groupDate,
         items: [item],
       });
-      groups.sort((left, right) => left.date.getTime() - right.date.getTime());
+      groups.sort((left, right) => right.date.getTime() - left.date.getTime());
       return groups;
     },
     [],
   );
+
+  useEffect(() => {
+    setExpandedAdminKpiGroupIds({});
+  }, [adminKpiReports]);
   const setNormalizedAdminKpiRange = (from: Date, to: Date) => {
     if (from.getTime() <= to.getTime()) {
       return { from, to };
@@ -4365,11 +4384,20 @@ const Sentinel = () => {
                         No KPI submissions found for {adminKpiSelectionLabel}.
                       </div>
                     ) : (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
                         {adminKpiReportGroups.map((group) => (
                           <div key={group.key} className="space-y-4">
-                            {!isAdminKpiSingleDate && (
-                              <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between rounded-lg border border-slate-700 bg-muted/20 px-4 py-4 text-left"
+                              onClick={() =>
+                                setExpandedAdminKpiGroupIds((prev) => ({
+                                  ...prev,
+                                  [group.key]: !prev[group.key],
+                                }))
+                              }
+                            >
+                              <div>
                                 <p className="text-sm font-semibold text-foreground">
                                   {format(group.date, "PPPP")}
                                 </p>
@@ -4378,101 +4406,107 @@ const Sentinel = () => {
                                   {group.items.length === 1 ? "" : "s"}
                                 </p>
                               </div>
-                            )}
-                            {group.items.map((item) => (
-                              <Card key={item.id}>
-                                <CardHeader className="pb-3">
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div>
-                                      <CardTitle className="text-base">
-                                        {item.display_name ||
-                                          item.email ||
-                                          `User ${item.profile_id.slice(0, 8)}`}
-                                      </CardTitle>
-                                      <CardDescription>
-                                        Saved:{" "}
-                                        {format(
-                                          new Date(item.updated_at),
-                                          "PPpp",
-                                        )}{" "}
-                                        | Submitted:{" "}
-                                        {format(
-                                          new Date(item.created_at),
-                                          "PPpp",
+                              {expandedAdminKpiGroupIds[group.key] ? (
+                                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </button>
+                            {expandedAdminKpiGroupIds[group.key] &&
+                              group.items.map((item) => (
+                                <Card key={item.id}>
+                                  <CardHeader className="pb-3">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div>
+                                        <CardTitle className="text-base">
+                                          {item.display_name ||
+                                            item.email ||
+                                            `User ${item.profile_id.slice(0, 8)}`}
+                                        </CardTitle>
+                                        <CardDescription>
+                                          Saved:{" "}
+                                          {format(
+                                            new Date(item.updated_at),
+                                            "PPpp",
+                                          )}{" "}
+                                          | Submitted:{" "}
+                                          {format(
+                                            new Date(item.created_at),
+                                            "PPpp",
+                                          )}
+                                        </CardDescription>
+                                      </div>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                          setExpandedAdminKpiIds((prev) => ({
+                                            ...prev,
+                                            [item.id]: !prev[item.id],
+                                          }))
+                                        }
+                                      >
+                                        {expandedAdminKpiIds[item.id] ? (
+                                          <>
+                                            <ChevronUp className="mr-2 h-4 w-4" />
+                                            Collapse
+                                          </>
+                                        ) : (
+                                          <>
+                                            <ChevronDown className="mr-2 h-4 w-4" />
+                                            Expand
+                                          </>
                                         )}
-                                      </CardDescription>
+                                      </Button>
                                     </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() =>
-                                        setExpandedAdminKpiIds((prev) => ({
-                                          ...prev,
-                                          [item.id]: !prev[item.id],
-                                        }))
-                                      }
-                                    >
-                                      {expandedAdminKpiIds[item.id] ? (
-                                        <>
-                                          <ChevronUp className="mr-2 h-4 w-4" />
-                                          Collapse
-                                        </>
-                                      ) : (
-                                        <>
-                                          <ChevronDown className="mr-2 h-4 w-4" />
-                                          Expand
-                                        </>
-                                      )}
-                                    </Button>
-                                  </div>
-                                </CardHeader>
-                                {expandedAdminKpiIds[item.id] && (
-                                  <CardContent className="space-y-3">
-                                    <div>
-                                      <p className="text-sm font-medium">
-                                        Goals
-                                      </p>
-                                      {renderGoalsDisplay(
-                                        item.goal_items,
-                                        item.goals,
-                                      )}
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium">
-                                        Tasks
-                                      </p>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                        {item.tasks || "-"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium">
-                                        Achievements
-                                      </p>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                        {item.achievements || "-"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium">
-                                        Challenges
-                                      </p>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                        {item.challenges || "-"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium">
-                                        Blockers
-                                      </p>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                        {item.blockers || "-"}
-                                      </p>
-                                    </div>
-                                  </CardContent>
-                                )}
-                              </Card>
-                            ))}
+                                  </CardHeader>
+                                  {expandedAdminKpiIds[item.id] && (
+                                    <CardContent className="space-y-3">
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          Goals
+                                        </p>
+                                        {renderGoalsDisplay(
+                                          item.goal_items,
+                                          item.goals,
+                                        )}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          Tasks
+                                        </p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                          {item.tasks || "-"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          Achievements
+                                        </p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                          {item.achievements || "-"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          Challenges
+                                        </p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                          {item.challenges || "-"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">
+                                          Blockers
+                                        </p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                          {item.blockers || "-"}
+                                        </p>
+                                      </div>
+                                    </CardContent>
+                                  )}
+                                </Card>
+                              ))}
                           </div>
                         ))}
                       </div>
