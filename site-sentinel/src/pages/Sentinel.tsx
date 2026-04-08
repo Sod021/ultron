@@ -774,6 +774,64 @@ const Sentinel = () => {
     );
   };
 
+  const renderDailyKpiActions = () => (
+    <div className="flex items-center justify-between gap-4">
+      {isDailyKpiLoading ? (
+        <span className="text-sm text-muted-foreground">
+          Loading daily KPI...
+        </span>
+      ) : isDailyKpiReadOnly ? (
+        <span className="text-sm text-muted-foreground">
+          Saved entry loaded. Click Edit to update.
+        </span>
+      ) : (
+        <span className="text-sm text-muted-foreground">
+          Data is saved per selected date.
+        </span>
+      )}
+      <div className="flex items-center gap-2">
+        {isDailyKpiReadOnly && (
+          <Button
+            variant="outline"
+            onClick={() => setIsDailyKpiEditMode(true)}
+            disabled={isDailyKpiLoading || isDailyKpiSaving}
+          >
+            Edit
+          </Button>
+        )}
+        {dailyKpiRecordId !== null && isDailyKpiEditMode && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsDailyKpiEditMode(false);
+              void loadDailyKpi();
+            }}
+            disabled={isDailyKpiLoading || isDailyKpiSaving}
+          >
+            Cancel
+          </Button>
+        )}
+        <Button
+          onClick={saveDailyKpi}
+          disabled={
+            isDailyKpiLoading || isDailyKpiSaving || isDailyKpiReadOnly
+          }
+        >
+          {isDailyKpiSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : dailyKpiRecordId !== null && isDailyKpiEditMode ? (
+            "Update Daily KPI"
+          ) : (
+            "Save Daily KPI"
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+
   const {
     autoChecks,
     isLoading: autoChecksLoading,
@@ -7369,6 +7427,8 @@ const Sentinel = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {renderDailyKpiActions()}
+
                     <div className="space-y-2">
                       <Label htmlFor="kpi-week-start">Date</Label>
                       <Input
@@ -7603,64 +7663,7 @@ const Sentinel = () => {
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      {isDailyKpiLoading ? (
-                        <span className="text-sm text-muted-foreground">
-                          Loading daily KPI...
-                        </span>
-                      ) : isDailyKpiReadOnly ? (
-                        <span className="text-sm text-muted-foreground">
-                          Saved entry loaded. Click Edit to update.
-                        </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          Data is saved per selected date.
-                        </span>
-                      )}
-                      <div className="flex items-center gap-2">
-                        {isDailyKpiReadOnly && (
-                          <Button
-                            variant="outline"
-                            onClick={() => setIsDailyKpiEditMode(true)}
-                            disabled={isDailyKpiLoading || isDailyKpiSaving}
-                          >
-                            Edit
-                          </Button>
-                        )}
-                        {dailyKpiRecordId !== null && isDailyKpiEditMode && (
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setIsDailyKpiEditMode(false);
-                              void loadDailyKpi();
-                            }}
-                            disabled={isDailyKpiLoading || isDailyKpiSaving}
-                          >
-                            Cancel
-                          </Button>
-                        )}
-                        <Button
-                          onClick={saveDailyKpi}
-                          disabled={
-                            isDailyKpiLoading ||
-                            isDailyKpiSaving ||
-                            isDailyKpiReadOnly
-                          }
-                        >
-                          {isDailyKpiSaving ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Saving...
-                            </>
-                          ) : dailyKpiRecordId !== null &&
-                            isDailyKpiEditMode ? (
-                            "Update Daily KPI"
-                          ) : (
-                            "Save Daily KPI"
-                          )}
-                        </Button>
-                      </div>
-                    </div>
+                    {renderDailyKpiActions()}
                   </CardContent>
                 </Card>
               </div>
