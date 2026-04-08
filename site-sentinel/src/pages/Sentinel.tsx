@@ -96,6 +96,12 @@ import {
 import { useDailyChecks, type DailyCheck } from "@/hooks/useDailyChecks";
 import { useAutoChecks, type AutoCheck } from "@/hooks/useAutoChecks";
 import { ReportPatcher } from "@/components/ReportPatcher";
+import {
+  Button as DayPickerButton,
+  type DateRange,
+  type DayProps,
+  useDayRender,
+} from "react-day-picker";
 
 type IssueProject = {
   id: number;
@@ -224,6 +230,12 @@ type KpiProfileLookup = {
 type AdminKpiReportRow = DailyKpiReportRow & {
   display_name: string | null;
   email: string | null;
+};
+
+type AdminKpiReportGroup = {
+  key: string;
+  date: Date;
+  items: AdminKpiReportRow[];
 };
 
 type AdminSubmissionTrendPoint = {
@@ -511,7 +523,15 @@ const Sentinel = () => {
   const [isDailyKpiSaving, setIsDailyKpiSaving] = useState(false);
   const [dailyKpiRecordId, setDailyKpiRecordId] = useState<number | null>(null);
   const [isDailyKpiEditMode, setIsDailyKpiEditMode] = useState(false);
-  const [adminKpiDate, setAdminKpiDate] = useState<Date>(new Date());
+  const [adminKpiDateRange, setAdminKpiDateRange] = useState<
+    DateRange | undefined
+  >({
+    from: new Date(),
+    to: new Date(),
+  });
+  const [adminKpiDateRangePreview, setAdminKpiDateRangePreview] = useState<
+    DateRange | undefined
+  >(undefined);
   const [adminKpiReports, setAdminKpiReports] = useState<AdminKpiReportRow[]>(
     [],
   );
@@ -546,6 +566,194 @@ const Sentinel = () => {
   const [savingMyKpiIds, setSavingMyKpiIds] = useState<Record<number, boolean>>(
     {},
   );
+  const adminKpiDragStateRef = useRef<{
+    anchor: Date | null;
+    current: Date | null;
+    didDrag: boolean;
+  }>({
+    anchor: null,
+    current: null,
+    didDrag: false,
+  });
+  const adminKpiIgnoreNextClickRef = useRef(false);
+
+  const getNormalizedAdminKpiRange = (range?: DateRange) => {
+    const fallback = new Date();
+    const from = range?.from ?? fallback;
+    const to = range?.to ?? from;
+
+    if (from.getTime() <= to.getTime()) {
+      return { from, to };
+    }
+
+    return { from: to, to: from };
+  };
+
+  const getStartOfDay = (date: Date) => {
+    const next = new Date(date);
+    next.setHours(0, 0, 0, 0);
+    return next;
+  };
+
+  const getExclusiveEndOfDay = (date: Date) => {
+    const next = getStartOfDay(date);
+    next.setDate(next.getDate() + 1);
+    return next;
+  };
+
+  const areSameCalendarDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
+
+  const displayedAdminKpiDateRange =
+    adminKpiDateRangePreview ?? adminKpiDateRange;
+  const normalizedAdminKpiRange = getNormalizedAdminKpiRange(
+    displayedAdminKpiDateRange,
+  );
+  const normalizedCommittedAdminKpiRange = getNormalizedAdminKpiRange(
+    adminKpiDateRange,
+  );
+  const isAdminKpiSingleDate = areSameCalendarDay(
+    normalizedAdminKpiRange.from,
+    normalizedAdminKpiRange.to,
+  );
+  const adminKpiSelectionLabel = isAdminKpiSingleDate
+    ? format(normalizedAdminKpiRange.from, "PPP")
+    : `${format(normalizedAdminKpiRange.from, "PPP")} - ${format(normalizedAdminKpiRange.to, "PPP")}`;
+  const adminKpiSelectionFileLabel = isAdminKpiSingleDate
+    ? format(normalizedAdminKpiRange.from, "yyyy-MM-dd")
+    : `${format(normalizedAdminKpiRange.from, "yyyy-MM-dd")}_to_${format(normalizedAdminKpiRange.to, "yyyy-MM-dd")}`;
+  const adminKpiReportGroups = adminKpiReports.reduce<AdminKpiReportGroup[]>(
+    (groups, item) => {
+      const groupDate = new Date(item.updated_at);
+      const key = format(groupDate, "yyyy-MM-dd");
+      const existingGroup = groups.find((group) => group.key === key);
+
+      if (existingGroup) {
+        existingGroup.items.push(item);
+        return groups;
+      }
+
+      groups.push({
+        key,
+        date: groupDate,
+        items: [item],
+      });
+      groups.sort((left, right) => left.date.getTime() - right.date.getTime());
+      return groups;
+    },
+    [],
+  );
+  const setNormalizedAdminKpiRange = (from: Date, to: Date) => {
+    if (from.getTime() <= to.getTime()) {
+      return { from, to };
+    }
+
+    return { from: to, to: from };
+  };
+
+  const commitAdminKpiDateRange = (range: DateRange | undefined) => {
+    if (!range?.from) return;
+    const normalizedRange = getNormalizedAdminKpiRange(range);
+    setAdminKpiDateRange(normalizedRange);
+    setAdminKpiDateRangePreview(undefined);
+  };
+
+  const beginAdminKpiDragSelection = (day: Date) => {
+    adminKpiDragStateRef.current = {
+      anchor: day,
+      current: day,
+      didDrag: false,
+    };
+    setAdminKpiDateRangePreview({ from: day, to: day });
+  };
+
+  const updateAdminKpiDragSelection = (day: Date) => {
+    const currentDragState = adminKpiDragStateRef.current;
+    if (!currentDragState.anchor) return;
+
+    currentDragState.current = day;
+    currentDragState.didDrag =
+      currentDragState.didDrag ||
+      !areSameCalendarDay(currentDragState.anchor, day);
+
+    const nextRange = setNormalizedAdminKpiRange(currentDragState.anchor, day);
+    setAdminKpiDateRangePreview(nextRange);
+  };
+
+  const finishAdminKpiDragSelection = () => {
+    const currentDragState = adminKpiDragStateRef.current;
+    if (!currentDragState.anchor) return;
+
+    const finalRange = setNormalizedAdminKpiRange(
+      currentDragState.anchor,
+      currentDragState.current ?? currentDragState.anchor,
+    );
+
+    adminKpiIgnoreNextClickRef.current = true;
+    setAdminKpiDateRange(finalRange);
+    setAdminKpiDateRangePreview(undefined);
+    adminKpiDragStateRef.current = {
+      anchor: null,
+      current: null,
+      didDrag: false,
+    };
+
+    window.setTimeout(() => {
+      adminKpiIgnoreNextClickRef.current = false;
+    }, 0);
+  };
+
+  useEffect(() => {
+    const handlePointerUp = () => {
+      finishAdminKpiDragSelection();
+    };
+
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
+  const AdminKpiCalendarDay = (props: DayProps) => {
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const dayRender = useDayRender(props.date, props.displayMonth, buttonRef);
+
+    if (dayRender.isHidden) {
+      return <div role="gridcell"></div>;
+    }
+
+    if (!dayRender.isButton) {
+      return <div {...dayRender.divProps} />;
+    }
+
+    return (
+      <DayPickerButton
+        name="day"
+        ref={buttonRef}
+        {...dayRender.buttonProps}
+        onPointerDown={(event) => {
+          dayRender.buttonProps.onPointerDown?.(event);
+          if (event.button !== 0) return;
+          beginAdminKpiDragSelection(props.date);
+        }}
+        onPointerEnter={(event) => {
+          dayRender.buttonProps.onPointerEnter?.(event);
+          if ((event.buttons & 1) !== 1) return;
+          updateAdminKpiDragSelection(props.date);
+        }}
+        onClick={(event) => {
+          if (adminKpiIgnoreNextClickRef.current) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          dayRender.buttonProps.onClick?.(event);
+        }}
+      />
+    );
+  };
 
   const {
     autoChecks,
@@ -668,7 +876,9 @@ const Sentinel = () => {
           })),
         );
       } else if (row?.goals) {
-        setKpiGoalItems([{ goal: row.goals, from_time: "", to_time: "", achieved: true }]);
+        setKpiGoalItems([
+          { goal: row.goals, from_time: "", to_time: "", achieved: true },
+        ]);
       } else {
         setKpiGoalItems([]);
       }
@@ -851,10 +1061,8 @@ const Sentinel = () => {
   const fetchAdminKpiReports = useCallback(async () => {
     setIsAdminKpiLoading(true);
     try {
-      const rangeStart = new Date(adminKpiDate);
-      rangeStart.setHours(0, 0, 0, 0);
-      const rangeEnd = new Date(rangeStart);
-      rangeEnd.setDate(rangeEnd.getDate() + 1);
+      const rangeStart = getStartOfDay(normalizedCommittedAdminKpiRange.from);
+      const rangeEnd = getExclusiveEndOfDay(normalizedCommittedAdminKpiRange.to);
       const { data: kpiData, error: kpiError } = await supabase
         .from("daily_kpis")
         .select(
@@ -902,7 +1110,7 @@ const Sentinel = () => {
     } finally {
       setIsAdminKpiLoading(false);
     }
-  }, [adminKpiDate, toast]);
+  }, [adminKpiDateRange, normalizedCommittedAdminKpiRange.from, normalizedCommittedAdminKpiRange.to, toast]);
 
   const fetchAdminDashboardData = useCallback(async () => {
     setIsAdminDashboardLoading(true);
@@ -1016,7 +1224,12 @@ const Sentinel = () => {
 
   const renderGoalsDisplay = (
     goalItems:
-      | Array<{ goal: string; from_time: string; to_time: string; achieved?: boolean }>
+      | Array<{
+          goal: string;
+          from_time: string;
+          to_time: string;
+          achieved?: boolean;
+        }>
       | null
       | undefined,
     fallbackGoals: string | null | undefined,
@@ -1201,14 +1414,15 @@ const Sentinel = () => {
     if (adminKpiReports.length === 0) {
       toast({
         title: "No data",
-        description: "There are no KPI submissions to export for this date.",
+        description:
+          "There are no KPI submissions to export for the selected date range.",
         variant: "destructive",
       });
       return;
     }
 
-    const sections = adminKpiReports
-      .map((item) => {
+    const sections = adminKpiReportGroups.flatMap((group) => {
+      const groupLines = group.items.flatMap((item) => {
         const goalRows = Array.isArray(item.goal_items)
           ? item.goal_items.filter(
               (row) => row && (row.goal || row.from_time || row.to_time),
@@ -1237,12 +1451,18 @@ const Sentinel = () => {
           item.blockers || "-",
           "",
         ];
-      })
-      .flat();
+      });
+
+      if (isAdminKpiSingleDate) {
+        return groupLines;
+      }
+
+      return [`Date: ${format(group.date, "PPPP")}`, "", ...groupLines];
+    });
 
     const allLines = [
       "Daily KPI Report",
-      `Date: ${format(adminKpiDate, "PPP")}`,
+      `${isAdminKpiSingleDate ? "Date" : "Date Range"}: ${adminKpiSelectionLabel}`,
       "",
       ...sections,
     ];
@@ -1341,7 +1561,7 @@ const Sentinel = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `daily-kpi-report-${format(adminKpiDate, "yyyy-MM-dd")}.docx`;
+    link.download = `daily-kpi-report-${adminKpiSelectionFileLabel}.docx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -4118,16 +4338,17 @@ const Sentinel = () => {
                             className="justify-start text-left font-normal min-w-56"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {format(adminKpiDate, "PPP")}
+                            {adminKpiSelectionLabel}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
-                            mode="single"
-                            selected={adminKpiDate}
-                            onSelect={(date) => {
-                              if (!date) return;
-                              setAdminKpiDate(date);
+                            mode="range"
+                            numberOfMonths={2}
+                            selected={displayedAdminKpiDateRange}
+                            components={{ Day: AdminKpiCalendarDay }}
+                            onSelect={(range) => {
+                              commitAdminKpiDateRange(range);
                             }}
                             initialFocus
                           />
@@ -4141,94 +4362,118 @@ const Sentinel = () => {
                       </div>
                     ) : adminKpiReports.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border p-10 text-center text-muted-foreground">
-                        No KPI submissions found for{" "}
-                        {format(adminKpiDate, "PPP")}.
+                        No KPI submissions found for {adminKpiSelectionLabel}.
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        {adminKpiReports.map((item) => (
-                          <Card key={item.id}>
-                            <CardHeader className="pb-3">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <CardTitle className="text-base">
-                                    {item.display_name ||
-                                      item.email ||
-                                      `User ${item.profile_id.slice(0, 8)}`}
-                                  </CardTitle>
-                                  <CardDescription>
-                                    Saved:{" "}
-                                    {format(new Date(item.updated_at), "PPpp")}{" "}
-                                    | Submitted:{" "}
-                                    {format(new Date(item.created_at), "PPpp")}
-                                  </CardDescription>
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    setExpandedAdminKpiIds((prev) => ({
-                                      ...prev,
-                                      [item.id]: !prev[item.id],
-                                    }))
-                                  }
-                                >
-                                  {expandedAdminKpiIds[item.id] ? (
-                                    <>
-                                      <ChevronUp className="mr-2 h-4 w-4" />
-                                      Collapse
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ChevronDown className="mr-2 h-4 w-4" />
-                                      Expand
-                                    </>
-                                  )}
-                                </Button>
+                        {adminKpiReportGroups.map((group) => (
+                          <div key={group.key} className="space-y-4">
+                            {!isAdminKpiSingleDate && (
+                              <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
+                                <p className="text-sm font-semibold text-foreground">
+                                  {format(group.date, "PPPP")}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {group.items.length} submission
+                                  {group.items.length === 1 ? "" : "s"}
+                                </p>
                               </div>
-                            </CardHeader>
-                            {expandedAdminKpiIds[item.id] && (
-                              <CardContent className="space-y-3">
-                                <div>
-                                  <p className="text-sm font-medium">Goals</p>
-                                  {renderGoalsDisplay(
-                                    item.goal_items,
-                                    item.goals,
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium">Tasks</p>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                    {item.tasks || "-"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium">
-                                    Achievements
-                                  </p>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                    {item.achievements || "-"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium">
-                                    Challenges
-                                  </p>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                    {item.challenges || "-"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium">
-                                    Blockers
-                                  </p>
-                                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                    {item.blockers || "-"}
-                                  </p>
-                                </div>
-                              </CardContent>
                             )}
-                          </Card>
+                            {group.items.map((item) => (
+                              <Card key={item.id}>
+                                <CardHeader className="pb-3">
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                      <CardTitle className="text-base">
+                                        {item.display_name ||
+                                          item.email ||
+                                          `User ${item.profile_id.slice(0, 8)}`}
+                                      </CardTitle>
+                                      <CardDescription>
+                                        Saved:{" "}
+                                        {format(
+                                          new Date(item.updated_at),
+                                          "PPpp",
+                                        )}{" "}
+                                        | Submitted:{" "}
+                                        {format(
+                                          new Date(item.created_at),
+                                          "PPpp",
+                                        )}
+                                      </CardDescription>
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        setExpandedAdminKpiIds((prev) => ({
+                                          ...prev,
+                                          [item.id]: !prev[item.id],
+                                        }))
+                                      }
+                                    >
+                                      {expandedAdminKpiIds[item.id] ? (
+                                        <>
+                                          <ChevronUp className="mr-2 h-4 w-4" />
+                                          Collapse
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronDown className="mr-2 h-4 w-4" />
+                                          Expand
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
+                                </CardHeader>
+                                {expandedAdminKpiIds[item.id] && (
+                                  <CardContent className="space-y-3">
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        Goals
+                                      </p>
+                                      {renderGoalsDisplay(
+                                        item.goal_items,
+                                        item.goals,
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        Tasks
+                                      </p>
+                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                        {item.tasks || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        Achievements
+                                      </p>
+                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                        {item.achievements || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        Challenges
+                                      </p>
+                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                        {item.challenges || "-"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium">
+                                        Blockers
+                                      </p>
+                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                                        {item.blockers || "-"}
+                                      </p>
+                                    </div>
+                                  </CardContent>
+                                )}
+                              </Card>
+                            ))}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -7199,7 +7444,9 @@ const Sentinel = () => {
                                 {isDailyKpiReadOnly ? (
                                   <span
                                     className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium text-white ${
-                                      item.achieved ? "bg-green-600" : "bg-red-600"
+                                      item.achieved
+                                        ? "bg-green-600"
+                                        : "bg-red-600"
                                     }`}
                                   >
                                     {item.achieved ? "✓" : "✕"}
@@ -7229,7 +7476,11 @@ const Sentinel = () => {
                                       disabled={
                                         isDailyKpiLoading || isDailyKpiSaving
                                       }
-                                      title={item.achieved ? "Mark as not achieved" : "Mark as achieved"}
+                                      title={
+                                        item.achieved
+                                          ? "Mark as not achieved"
+                                          : "Mark as achieved"
+                                      }
                                     >
                                       {item.achieved ? "✓" : "✕"}
                                     </Button>
