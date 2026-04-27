@@ -639,10 +639,11 @@ const Sentinel = () => {
   const adminKpiSelectionFileLabel = isAdminKpiSingleDate
     ? format(normalizedAdminKpiRange.from, "yyyy-MM-dd")
     : `${format(normalizedAdminKpiRange.from, "yyyy-MM-dd")}_to_${format(normalizedAdminKpiRange.to, "yyyy-MM-dd")}`;
+  const todayKpiEntryDate = format(new Date(), "yyyy-MM-dd");
   const adminKpiReportGroups = adminKpiReports.reduce<AdminKpiReportGroup[]>(
     (groups, item) => {
-      const groupDate = new Date(item.updated_at);
-      const key = format(groupDate, "yyyy-MM-dd");
+      const groupDate = new Date(`${item.entry_date}T00:00:00`);
+      const key = item.entry_date;
       const existingGroup = groups.find((group) => group.key === key);
 
       if (existingGroup) {
@@ -753,7 +754,6 @@ const Sentinel = () => {
         ref={buttonRef}
         {...dayRender.buttonProps}
         onPointerDown={(event) => {
-          dayRender.buttonProps.onPointerDown?.(event);
           if (event.button !== 0) return;
           beginAdminKpiDragSelection(props.date);
         }}
@@ -1077,6 +1077,14 @@ const Sentinel = () => {
 
   const saveDailyKpi = async () => {
     if (!currentUser?.id) return;
+    if (kpiEntryDate > todayKpiEntryDate) {
+      toast({
+        title: "Invalid date",
+        description: "Daily KPI entries cannot be saved for a future date.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsDailyKpiSaving(true);
     try {
       const sanitizedGoalItems = kpiGoalItems
@@ -1138,15 +1146,16 @@ const Sentinel = () => {
   const fetchAdminKpiReports = useCallback(async () => {
     setIsAdminKpiLoading(true);
     try {
-      const rangeStart = getStartOfDay(normalizedCommittedAdminKpiRange.from);
-      const rangeEnd = getExclusiveEndOfDay(normalizedCommittedAdminKpiRange.to);
+      const rangeStart = format(normalizedCommittedAdminKpiRange.from, "yyyy-MM-dd");
+      const rangeEnd = format(normalizedCommittedAdminKpiRange.to, "yyyy-MM-dd");
       const { data: kpiData, error: kpiError } = await supabase
         .from("daily_kpis")
         .select(
           "id, profile_id, entry_date, goals, goal_items, tasks, achievements, challenges, blockers, created_at, updated_at",
         )
-        .gte("updated_at", rangeStart.toISOString())
-        .lt("updated_at", rangeEnd.toISOString())
+        .gte("entry_date", rangeStart)
+        .lte("entry_date", rangeEnd)
+        .order("entry_date", { ascending: false })
         .order("updated_at", { ascending: false });
       if (kpiError) throw kpiError;
 
@@ -7436,6 +7445,7 @@ const Sentinel = () => {
                         type="date"
                         value={kpiEntryDate}
                         onChange={(e) => setKpiEntryDate(e.target.value)}
+                        max={todayKpiEntryDate}
                         disabled={isDailyKpiLoading || isDailyKpiSaving}
                       />
                     </div>
