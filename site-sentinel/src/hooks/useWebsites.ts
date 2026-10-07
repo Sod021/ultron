@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 
@@ -7,6 +7,7 @@ export interface Website {
   name: string;
   url: string;
   created_at: string;
+  is_shared: boolean;
   website_mail?: string | null;
   mail_password?: string | null;
   current_mail_service?: string | null;
@@ -28,13 +29,15 @@ export type WebsiteInput = {
   thinktech_server?: string | null;
 };
 
+const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, '').toLowerCase();
+
 export const useWebsites = () => {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Fetch all websites
-  const fetchWebsites = async () => {
+  // Websites are a shared catalog: every authenticated account reads the same rows.
+  const fetchWebsites = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -46,7 +49,6 @@ export const useWebsites = () => {
       const { data, error } = await supabase
         .from('websites')
         .select('*')
-        .eq('user_id', authData.user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -61,7 +63,7 @@ export const useWebsites = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   // Add a new website
   const addWebsite = async (website: WebsiteInput) => {
@@ -82,11 +84,20 @@ export const useWebsites = () => {
         thinktech_server: website.thinktech_server || null,
       };
 
+      const { data: existing, error: existingError } = await supabase
+        .from('websites')
+        .select('url');
+      if (existingError) throw existingError;
+      if ((existing || []).some(site => normalizeUrl(site.url) === normalizeUrl(website.url))) {
+        throw new Error('This website is already in the shared catalog.');
+      }
+
       const { data, error } = await supabase
         .from('websites')
         .insert({
           ...payload,
           user_id: authData.user.id,
+          is_shared: true,
         })
         .select('*')
         .single();
@@ -103,7 +114,7 @@ export const useWebsites = () => {
       console.error('Error adding website:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add website',
+        description: error instanceof Error ? error.message : 'Failed to add website',
         variant: 'destructive',
       });
       return null;
@@ -124,6 +135,14 @@ export const useWebsites = () => {
         thinktech_server: website.thinktech_server || null,
       };
 
+      const { data: existing, error: existingError } = await supabase
+        .from('websites')
+        .select('id, url');
+      if (existingError) throw existingError;
+      if ((existing || []).some(site => site.id !== id && normalizeUrl(site.url) === normalizeUrl(website.url))) {
+        throw new Error('Another website already uses this URL in the shared catalog.');
+      }
+
       const { data, error } = await supabase
         .from('websites')
         .update(payload)
@@ -133,7 +152,7 @@ export const useWebsites = () => {
 
       if (error) throw error;
 
-      let updated: Website | null = data as Website;
+      const updated: Website | null = data as Website;
       setWebsites(prev => prev.map(w => (w.id !== id ? w : (updated as Website))));
       toast({
         title: 'Success',
@@ -144,7 +163,7 @@ export const useWebsites = () => {
       console.error('Error updating website:', error);
       toast({
         title: 'Error',
-        description: 'Failed to update website',
+        description: error instanceof Error ? error.message : 'Failed to update website',
         variant: 'destructive',
       });
       return null;
@@ -172,7 +191,7 @@ export const useWebsites = () => {
     }
   };
 
-  // Bulk add websites (for CSV import)
+  // Bulk add websites (for CSV import), skipping URLs already in the shared catalog.
   const bulkAddWebsites = async (websitesToAdd: { name: string; url: string }[]) => {
     try {
       const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -180,15 +199,33 @@ export const useWebsites = () => {
         throw new Error('You must be signed in to upload websites.');
       }
 
-      const payload = websitesToAdd.map(site => ({
-        name: site.name,
-        url: site.url,
-        user_id: authData.user.id,
-      }));
+      const { data: existing, error: existingError } = await supabase
+        .from('websites')
+        .select('url');
+
+      if (existingError) throw existingError;
+
+      const existingUrls = new Set((existing || []).map(site => normalizeUrl(site.url)));
+      const incomingUrls = new Set<string>();
+      const payload = websitesToAdd
+        .filter(site => {
+          const key = normalizeUrl(site.url);
+          if (!key || existingUrls.has(key) || incomingUrls.has(key)) return false;
+          incomingUrls.add(key);
+          return true;
+        })
+        .map(site => ({
+          name: site.name,
+          url: site.url,
+          user_id: authData.user.id,
+          is_shared: true,
+        }));
+
+      if (payload.length === 0) return [];
 
       const { data, error } = await supabase
         .from('websites')
-        .upsert(payload, { onConflict: 'user_id,url' })
+        .insert(payload)
         .select('*');
 
       if (error) throw error;
@@ -213,7 +250,8 @@ export const useWebsites = () => {
         throw new Error('You must be signed in to clear websites.');
       }
 
-      const { error } = await supabase.from('websites').delete().eq('user_id', authData.user.id);
+      // Match every row without relying on the creator's user_id.
+      const { error } = await supabase.from('websites').delete().not('id', 'is', null);
       if (error) throw error;
 
       setWebsites([]);
@@ -233,7 +271,22 @@ export const useWebsites = () => {
 
   useEffect(() => {
     fetchWebsites();
-  }, []);
+
+    const channel = supabase
+      .channel('shared-websites-catalog')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'websites' },
+        () => {
+          void fetchWebsites();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchWebsites]);
 
   return {
     websites,

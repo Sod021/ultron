@@ -1,9 +1,7 @@
-import { serve } from "https://deno.land/std@0.204.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient, type User } from "npm:@supabase/supabase-js@2.49.1";
 
 type Website = {
   id: number;
-  user_id: string;
   name: string;
   url: string;
 };
@@ -54,7 +52,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-serve(async (req) => {
+const getAllUserIds = async () => {
+  const userIds: string[] = [];
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    userIds.push(...data.users.map((user: User) => user.id));
+    if (data.users.length < 1000) break;
+    page += 1;
+  }
+
+  return userIds;
+};
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -62,22 +75,45 @@ serve(async (req) => {
     return new Response("Missing Supabase env vars", { status: 500, headers: corsHeaders });
   }
 
+  const authorization = req.headers.get("Authorization") ?? "";
+  const token = authorization.replace(/^Bearer\s+/i, "");
+  if (!token) {
+    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+  }
+
+  const isScheduledRun = token === SUPABASE_SERVICE_ROLE_KEY;
+  const { data: userData } = isScheduledRun
+    ? { data: { user: null } }
+    : await supabase.auth.getUser(token);
+
+  if (!isScheduledRun && !userData.user) {
+    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+  }
+
+  let recipientUserIds: string[];
+  try {
+    recipientUserIds = isScheduledRun
+      ? await getAllUserIds()
+      : [userData.user!.id];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to load users";
+    return new Response(message, { status: 500, headers: corsHeaders });
+  }
+
   const { data: websites, error } = await supabase
     .from("websites")
-    .select("id, user_id, name, url");
+    .select("id, name, url")
+    .eq("is_shared", true);
 
   if (error) {
     return new Response(`Failed to load websites: ${error.message}`, { status: 500, headers: corsHeaders });
   }
 
-  const uniqueUserIds = Array.from(
-    new Set((websites || []).map((site: Website) => site.user_id)),
-  );
-  if (uniqueUserIds.length > 0) {
+  if (recipientUserIds.length > 0) {
     const { error: deleteError } = await supabase
       .from("auto_checks")
       .delete()
-      .in("user_id", uniqueUserIds);
+      .in("user_id", recipientUserIds);
     if (deleteError) {
       return new Response(`Failed to clear previous checks: ${deleteError.message}`, { status: 500, headers: corsHeaders });
     }
@@ -105,17 +141,19 @@ serve(async (req) => {
       errorType = classifyError(null, isTimeout ? "timeout" : isDns ? "dns" : "http");
     }
 
-    inserts.push({
-      user_id: site.user_id,
-      website_id: site.id,
-      website_name: site.name,
-      website_url: site.url,
-      status_code: statusCode,
-      error_type: errorType,
-      response_time_ms: responseTime,
-      checked_at: now,
-      is_live: isLive,
-    });
+    for (const userId of recipientUserIds) {
+      inserts.push({
+        user_id: userId,
+        website_id: site.id,
+        website_name: site.name,
+        website_url: site.url,
+        status_code: statusCode,
+        error_type: errorType,
+        response_time_ms: responseTime,
+        checked_at: now,
+        is_live: isLive,
+      });
+    }
   }
 
   if (inserts.length === 0) {
@@ -127,5 +165,12 @@ serve(async (req) => {
     return new Response(`Failed to insert checks: ${insertError.message}`, { status: 500, headers: corsHeaders });
   }
 
-  return new Response(JSON.stringify({ inserted: inserts.length }), { status: 200, headers: corsHeaders });
+  return new Response(
+    JSON.stringify({
+      checked: (websites || []).length,
+      recipients: recipientUserIds.length,
+      inserted: inserts.length,
+    }),
+    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
 });

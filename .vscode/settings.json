@@ -1,0 +1,3 @@
+{
+  "deno.enablePaths": ["./site-sentinel/supabase/functions"]
+}
